@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- jet flame -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.9"
+        android:pathData="M45,68 L63,68 L54,90 Z" />
+    <!-- helmet -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M33,48 a21,21 0 1,0 42,0 a21,21 0 1,0 -42,0 z" />
+    <!-- visor -->
+    <path
+        android:fillColor="#0A2A38"
+        android:pathData="M45,49 a15,10 0 1,0 30,0 a15,10 0 1,0 -30,0 z" />
+    <!-- visor shine -->
+    <path
+        android:fillColor="#8FF3FF"
+        android:fillAlpha="0.85"
+        android:pathData="M50,45 a7,3 0 1,0 14,0 a7,3 0 1,0 -14,0 z" />
+</vector>
