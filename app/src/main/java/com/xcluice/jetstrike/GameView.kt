@@ -1059,7 +1059,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                             g.note("Team mode fits 3 players. Someone has to leave first.")
                         } else {
                             g.menuRules = r
-                            n.setHostRules(r.ordinal)
+                            n.hostRules = r.ordinal
                             n.broadcastLobby()
                         }
                     } else {

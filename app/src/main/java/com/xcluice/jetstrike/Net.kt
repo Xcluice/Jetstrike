@@ -139,10 +139,6 @@ class Net(private val ctx: Context) {
         return true
     }
 
-    fun setHostRules(rules: Int) {
-        hostRules = rules
-    }
-
     fun activeClients(): List<Conn> = clients.filter { it.alive }
 
     private fun acceptLoop(ss: ServerSocket) {
