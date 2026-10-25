@@ -34,6 +34,7 @@ class Sfx(ctx: Context) {
             add(ctx, "die", gen(.45f, 1f, 900f, .4f, 180f, .3f, false))
             add(ctx, "pick", gen(.22f, 0f, 2000f, .8f, 700f, 1.6f, false))
             add(ctx, "reload", gen(.1f, .2f, 2000f, .7f, 320f, 1.2f, true))
+            add(ctx, "boom", gen(.6f, 1f, 600f, .6f, 85f, .3f, false))
             add(ctx, "jet", gen(.1f, 1f, 900f, 0f, 200f, 1f, false))
         } catch (e: Exception) {
             // sound is optional; the game runs without it
