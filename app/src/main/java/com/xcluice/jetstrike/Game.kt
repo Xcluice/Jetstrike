@@ -56,7 +56,8 @@ class Skin(val name: String, hex: String, hexD: String, hexL: String, val acc: I
 
 class Weapon(
     val key: String, val n: String, val rate: Float, val dmg: Float, val spd: Float, val spr: Float,
-    val mag: Int, val rel: Float, val pel: Int, val life: Float, val len: Float, val rec: Float, val tr: Float
+    val mag: Int, val rel: Float, val pel: Int, val life: Float, val len: Float, val rec: Float, val tr: Float,
+    val scopes: FloatArray, val reticle: Int, val kind: Int
 )
 
 class Diff(val err: Float, val speed: Float)
@@ -133,7 +134,7 @@ class Ent(val id: Int, var skin: Skin, val team: Int) {
 
 class Bullet(
     var x: Float, var y: Float, val vx: Float, val vy: Float, val dmg: Float,
-    var l: Float, val o: Ent?, val team: Int, val tr: Float, val big: Boolean
+    var l: Float, val o: Ent?, val team: Int, val tr: Float, val big: Boolean, val kind: Int = 0
 )
 
 class Grenade(var x: Float, var y: Float, var vx: Float, var vy: Float, var fuse: Float, val oid: Int, val team: Int)
@@ -157,7 +158,7 @@ enum class Mode { MENU, PLAY, OVER, HOST, JOIN, WAIT }
 enum class Rules { TEAM, SOLO }
 enum class Role { OFFLINE, HOST, CLIENT }
 
-val WEAPON_KEYS: List<String> = listOf("pistol", "rifle", "shotgun", "sniper")
+val WEAPON_KEYS: List<String> = listOf("pistol", "rifle", "shotgun", "sniper", "smg", "rocket", "flame", "laser")
 val DIFF_KEYS: List<String> = listOf("easy", "normal", "hard")
 val BOT_NAMES: List<String> = listOf("Rook", "Vex", "Blitz", "Echo", "Flux", "Zane", "Mako", "Juno")
 
@@ -198,7 +199,7 @@ val SPAWNS: List<FloatArray> = buildList {
 }
 
 val PICK_DEF: List<Triple<String, Float, Float>> = buildList {
-    val guns = listOf("rifle", "shotgun", "rifle", "sniper")
+    val guns = listOf("rifle", "shotgun", "smg", "laser", "rocket", "flame", "sniper", "smg")
     var gi = 0
     for (i in 1 until PLATS.size) {
         val pl = PLATS[i]
@@ -229,10 +230,14 @@ val SKINS: List<Skin> = listOf(
 )
 
 val WEAPONS: Map<String, Weapon> = mapOf(
-    "pistol" to Weapon("pistol", "Pistol", .26f, 16f, 1000f, .025f, 12, 1.0f, 1, .75f, 15f, 30f, .02f),
-    "rifle" to Weapon("rifle", "Assault Rifle", .095f, 9f, 1150f, .05f, 30, 1.5f, 1, .8f, 26f, 22f, .025f),
-    "shotgun" to Weapon("shotgun", "Shotgun", .75f, 9f, 900f, .2f, 6, 1.7f, 7, .34f, 23f, 170f, .02f),
-    "sniper" to Weapon("sniper", "Sniper", 1.05f, 62f, 2100f, .004f, 5, 2.0f, 1, .9f, 34f, 140f, .05f)
+    "pistol" to Weapon("pistol", "Pistol", .26f, 16f, 1000f, .025f, 12, 1.0f, 1, .75f, 15f, 30f, .02f, floatArrayOf(4f, 5f), 0, 0),
+    "smg" to Weapon("smg", "SMG", .06f, 6f, 1100f, .09f, 40, 1.4f, 1, .7f, 17f, 10f, .02f, floatArrayOf(4f, 5f), 0, 0),
+    "rifle" to Weapon("rifle", "Assault Rifle", .095f, 9f, 1150f, .05f, 30, 1.5f, 1, .8f, 26f, 22f, .025f, floatArrayOf(4f, 6f), 1, 0),
+    "shotgun" to Weapon("shotgun", "Shotgun", .75f, 9f, 900f, .2f, 6, 1.7f, 7, .34f, 23f, 170f, .02f, floatArrayOf(4f, 2f), 2, 0),
+    "rocket" to Weapon("rocket", "Rocket Launcher", 1.2f, 0f, 650f, .01f, 3, 2.4f, 1, 2.0f, 30f, 160f, .03f, floatArrayOf(4f, 3f), 3, 1),
+    "flame" to Weapon("flame", "Flamethrower", .06f, 5f, 520f, .22f, 100, 2.2f, 1, .38f, 20f, 6f, .01f, floatArrayOf(4f, 3f), 0, 2),
+    "laser" to Weapon("laser", "Laser Rifle", .42f, 24f, 3200f, 0f, 12, 1.8f, 1, .5f, 28f, 40f, .03f, floatArrayOf(4f, 6f), 1, 3),
+    "sniper" to Weapon("sniper", "Sniper", 1.05f, 62f, 2100f, .004f, 5, 2.0f, 1, .9f, 34f, 140f, .05f, floatArrayOf(4f, 7f, 6f, 5f), 4, 0)
 )
 
 val DIFFS: Map<String, Diff> = mapOf(
@@ -276,6 +281,9 @@ class Game {
     var panX = 0f
     var panY = 0f
     var panning = false
+    var scopeIdx = 0
+    var zoomCur = 4f
+    private var lastWp = "pistol"
 
     // touch sticks and button requests, set by the view
     var lx = 0f
@@ -307,6 +315,17 @@ class Game {
 
     val online: Boolean
         get() = role != Role.OFFLINE
+
+    fun scopes(): FloatArray = WEAPONS.getValue(player.wp).scopes
+
+    fun zoomLevel(): Float {
+        val l = scopes()
+        return l[scopeIdx.coerceIn(0, l.size - 1)]
+    }
+
+    fun scopeStep() {
+        scopeIdx = (scopeIdx + 1) % scopes().size
+    }
 
     fun diffIndex(): Int = max(0, DIFF_KEYS.indexOf(diff))
 
@@ -465,6 +484,10 @@ class Game {
     fun update(dt: Float) {
         t += dt
         if (noticeT > 0f) noticeT -= dt
+        if (player.wp != lastWp) { lastWp = player.wp; scopeIdx = 0 }
+        if (!player.alive) scopeIdx = 0
+        val zt = if (mode == Mode.PLAY || mode == Mode.OVER) zoomLevel() else 4f
+        zoomCur += (zt - zoomCur) * (1f - exp(-8f * dt))
         pollNet()
         if (role == Role.CLIENT && (mode == Mode.PLAY || mode == Mode.OVER)) {
             clientUpdate(dt)
@@ -602,7 +625,7 @@ class Game {
                         part(mxp, myp, cos(e.aim) * rnd(80f, 260f) + rnd(-60f, 60f), sin(e.aim) * rnd(80f, 260f) + rnd(-60f, 60f),
                             .14f, rnd(2f, 4f), 0xFFFFE08A.toInt(), 0f, true)
                     }
-                    if (isMe(e)) shake = max(shake, if (w.key == "shotgun") 7f else if (w.key == "sniper") 9f else 2f)
+                    if (isMe(e)) shake = max(shake, if (w.key == "shotgun") 7f else if (w.key == "sniper") 9f else if (w.key == "rocket") 8f else if (w.key == "flame" || w.key == "smg") 1f else 2f)
                     snd(w.key, e.x, e.y)
                 }
             }
@@ -766,7 +789,7 @@ class Game {
         for (i in 0 until w.pel) {
             val a = e.aim + (Random.nextFloat() - .5f) * 2f * w.spr
             val sp = w.spd * (if (w.pel > 1) rnd(.85f, 1.05f) else 1f)
-            bullets.add(Bullet(mxp, myp, cos(a) * sp, sin(a) * sp, w.dmg, w.life, e, e.team, w.tr, w.key == "sniper"))
+            bullets.add(Bullet(mxp, myp, cos(a) * sp, sin(a) * sp, w.dmg, w.life, e, e.team, w.tr, w.key == "sniper", w.kind))
         }
         e.vx -= cos(e.aim) * w.rec * .5f
         e.vy -= sin(e.aim) * w.rec * .15f
@@ -820,16 +843,20 @@ class Game {
     }
 
     private fun explode(g: Grenade) {
-        emit(EV_EXPL, g.x, g.y, 0f, 0f)
-        val owner = ents.getOrNull(g.oid)
+        explodeAt(g.x, g.y, g.oid, 95f, GREN_R)
+    }
+
+    private fun explodeAt(x: Float, y: Float, oid: Int, maxDmg: Float, radius: Float) {
+        emit(EV_EXPL, x, y, 0f, 0f)
+        val owner = ents.getOrNull(oid)
         for (e in ents) {
             if (!e.alive) continue
-            val dx = e.x - g.x
-            val dy = (e.y - 22f) - g.y
+            val dx = e.x - x
+            val dy = (e.y - 22f) - y
             val d = hypot(dx, dy)
-            if (d < GREN_R) {
-                val f = 1f - d / GREN_R
-                if (owner != null) damage(e, 95f * f + 8f, owner, atan2(dy, dx))
+            if (d < radius) {
+                val f = 1f - d / radius
+                if (owner != null) damage(e, maxDmg * f + 8f, owner, atan2(dy, dx))
                 e.vx += (dx / max(d, 1f)) * 520f * f
                 e.vy += (dy / max(d, 1f)) * 520f * f - 120f * f
             }
@@ -917,7 +944,7 @@ class Game {
             } else if (tg != null) {
                 val dx = tg.x - e.x
                 val dy = tg.y - e.y
-                val ideal = if (e.wp == "shotgun") 170f else if (e.wp == "sniper") 520f else 320f
+                val ideal = when (e.wp) { "shotgun" -> 170f; "sniper" -> 520f; "flame" -> 120f; "rocket" -> 420f; "laser" -> 380f; "smg" -> 260f; else -> 320f }
                 if (bd > ideal + 70f) mx = sign(dx)
                 else if (bd < ideal - 70f) mx = -sign(dx)
                 else {
@@ -954,7 +981,7 @@ class Game {
         }
         e.aim += angDiff(e.aim, des) * min(1f, dd.speed * dt)
         e.fire = tg2 != null && tg2.alive && e.los &&
-            e.dist < (if (e.wp == "sniper") 800f else 520f) && abs(angDiff(e.aim, des)) < .2f &&
+            e.dist < (when (e.wp) { "sniper" -> 800f; "flame" -> 190f; "shotgun" -> 320f; else -> 520f }) && abs(angDiff(e.aim, des)) < .2f &&
             e.seenT > (when (diff) { "easy" -> .75f; "hard" -> .3f; else -> .5f })
     }
 
@@ -1012,6 +1039,7 @@ class Game {
             var s = 0
             while (s < steps && !dead) {
                 b.x += b.vx * sdt; b.y += b.vy * sdt
+                if (b.kind == 1 && s % 2 == 0) part(b.x, b.y, rnd(-20f, 20f), rnd(-20f, 20f), .5f, rnd(3f, 6f), 0x99AAAAAA.toInt(), -20f, false)
                 for (p in PLATS) {
                     if (b.x > p.x && b.x < p.x + p.w && b.y > p.y && b.y < p.y + p.h) {
                         dead = true
@@ -1022,10 +1050,10 @@ class Game {
                 if (!dead) {
                     for (e in ents) {
                         if (!e.alive || e.team == b.team) continue
-                        if (abs(b.x - e.x) < 12f && b.y > e.y - 48f && b.y < e.y + 2f) {
+                        if (abs(b.x - e.x) < 14f && b.y > e.y - 54f && b.y < e.y + 2f) {
                             if (e.inv > 0f) continue
                             val o = b.o
-                            if (o != null) damage(e, b.dmg, o, atan2(b.vy, b.vx))
+                            if (o != null && b.kind != 1) damage(e, b.dmg, o, atan2(b.vy, b.vx))
                             dead = true
                             break
                         }
@@ -1034,6 +1062,7 @@ class Game {
                 s++
             }
             b.l -= dt
+            if (b.kind == 1 && (dead || b.l <= 0f)) explodeAt(b.x, b.y, b.o?.id ?: -1, 85f, 135f)
             if (dead || b.l <= 0f || b.x < -50f || b.x > WORLD_W + 50f || b.y < -200f || b.y > WORLD_H + 100f) {
                 val last = bullets.size - 1
                 bullets[i] = bullets[last]
@@ -1054,13 +1083,15 @@ class Game {
 
     fun updateCam(dt: Float, snap: Boolean) {
         val f = focusEnt()
-        val lead = if (f.alive) cos(f.aim) * 60f else 0f
+        val zk = if (zoomCur > 4f) 1f + (zoomCur - 4f) * .9f else 1f
+        val lead = if (f.alive) cos(f.aim) * 60f * zk else 0f
+        val leadY = if (f.alive) sin(f.aim) * 40f * zk else 0f
         if (!panning) {
             val k = exp(-4f * dt)
             panX *= k; panY *= k
         }
         var tx = f.x + lead - vw / 2f + panX
-        var ty = f.y - 110f - vh / 2f + panY
+        var ty = f.y - 110f - vh / 2f + panY + leadY
         tx = if (vw >= WORLD_W) (WORLD_W - vw) / 2f else max(0f, min(WORLD_W - vw, tx))
         ty = if (vh >= WORLD_H) (WORLD_H - vh) / 2f else max(0f, min(WORLD_H - vh, ty))
         val k2 = if (snap) 1f else 1f - exp(-6f * dt)
@@ -1108,7 +1139,7 @@ class Game {
         for (i in 0 until nb) {
             val b = bullets[i]
             o.writeFloat(b.x); o.writeFloat(b.y); o.writeFloat(b.vx); o.writeFloat(b.vy)
-            o.writeByte(b.o?.id ?: 0); o.writeByte(b.team); o.writeByte(if (b.big) 1 else 0)
+            o.writeByte(b.o?.id ?: 0); o.writeByte(b.team); o.writeByte(b.kind * 2 + (if (b.big) 1 else 0))
         }
         o.writeByte(min(grenades.size, 40))
         for (i in 0 until min(grenades.size, 40)) {
@@ -1179,9 +1210,10 @@ class Game {
         val nb = d.readUnsignedShort()
         for (k in 0 until nb) {
             val bx = d.readFloat(); val by = d.readFloat(); val bvx = d.readFloat(); val bvy = d.readFloat()
-            val oid = d.readUnsignedByte(); val team = d.readUnsignedByte(); val big = d.readUnsignedByte() == 1
-            val w = if (big) WEAPONS.getValue("sniper") else WEAPONS.getValue("pistol")
-            bullets.add(Bullet(bx, by, bvx, bvy, 0f, 1f, ents.getOrNull(oid), team, w.tr, big))
+            val oid = d.readUnsignedByte(); val team = d.readUnsignedByte(); val kv = d.readUnsignedByte()
+            val big = (kv and 1) == 1
+            val kind = kv shr 1
+            bullets.add(Bullet(bx, by, bvx, bvy, 0f, 1f, ents.getOrNull(oid), team, if (kind == 3) .03f else .02f, big, kind))
         }
         grenades.clear()
         val ng = d.readUnsignedByte()
@@ -1224,7 +1256,10 @@ class Game {
                 if (e.jetting) jetFx(e)
             }
         }
-        for (b in bullets) { b.x += b.vx * dt; b.y += b.vy * dt }
+        for (b in bullets) {
+            b.x += b.vx * dt; b.y += b.vy * dt
+            if (b.kind == 1 && Random.nextFloat() < .6f) part(b.x, b.y, rnd(-20f, 20f), rnd(-20f, 20f), .5f, rnd(3f, 6f), 0x99AAAAAA.toInt(), -20f, false)
+        }
         for (g in grenades) { g.vy += 1100f * dt; g.x += g.vx * dt; g.y += g.vy * dt }
         stepParts(dt); stepTexts(dt)
         shake = max(0f, shake - dt * 30f)

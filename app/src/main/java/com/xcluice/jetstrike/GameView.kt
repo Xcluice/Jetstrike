@@ -19,6 +19,7 @@ import android.view.SurfaceView
 import android.widget.EditText
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -41,6 +42,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private var W = 1f
     private var H = 1f
     private var scale = 1f
+    private var baseScale = 1f
     private var insetL = 0f
     private var insetR = 0f
 
@@ -108,6 +110,11 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private val reloadR = RectF()
     private val slotR = arrayOf(RectF(), RectF())
     private val bGren = RectF()
+    private val bScope = RectF()
+    private val scopeR = RectF()
+    private var scopeCx = 0f
+    private var scopeCy = 0f
+    private val scopePath = Path()
     private val bReload = RectF()
     private val bSlot = arrayOf(RectF(), RectF())
     private var lcx = 0f
@@ -124,8 +131,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     // customisable control layout (position as screen fractions, plus a size multiplier)
     private class Ctl(var fx: Float, var fy: Float, var s: Float)
     private val ctl = HashMap<String, Ctl>()
-    private val CTL_KEYS = listOf("move", "aim", "gren", "weap")
-    private val CTL_NAMES = mapOf("move" to "MOVE STICK", "aim" to "AIM / FIRE STICK", "gren" to "GRENADE BUTTON", "weap" to "WEAPON BAR")
+    private val CTL_KEYS = listOf("move", "aim", "gren", "scope", "weap")
+    private val CTL_NAMES = mapOf("move" to "MOVE STICK", "aim" to "AIM / FIRE STICK", "gren" to "GRENADE BUTTON", "scope" to "SCOPE BUTTON", "weap" to "WEAPON BAR")
     private val CTL_MIN = .6f
     private val CTL_MAX = 1.6f
     private var ctlLoaded = false
@@ -199,7 +206,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         W = width.toFloat(); H = height.toFloat()
-        scale = min(W / 700f, H / 430f)
+        baseScale = min(W / 700f, H / 430f)
+        scale = baseScale * game.zoomCur / 4f
         game.vw = W / scale; game.vh = H / scale
         uiK = min(W * .94f / 480f, H * .94f / 300f)
         uiOx = (W - 480f * uiK) / 2f
@@ -262,6 +270,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 val a = actions.poll() ?: break
                 a.run()
             }
+            val ns = baseScale * game.zoomCur / 4f
+            if (abs(ns - scale) > 1e-5f) { scale = ns; game.vw = W / scale; game.vh = H / scale }
             game.update(dt)
             val c: Canvas? = try {
                 if (Build.VERSION.SDK_INT >= 26) holder.lockHardwareCanvas() else holder.lockCanvas()
@@ -286,7 +296,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
     /** Rounded rect with a dark outline, used for the characters so they read against any backdrop. */
     private fun rro(c: Canvas, l: Float, t: Float, r: Float, b: Float, rad: Float, col: Int) {
-        sp.shader = null; sp.strokeWidth = 3.2f; sp.color = OUTLINE
+        sp.shader = null; sp.strokeWidth = 4.2f; sp.color = OUTLINE
         rect.set(l, t, r, b)
         c.drawRoundRect(rect, rad, rad, sp)
         rr(c, l, t, r, b, rad, col)
@@ -298,7 +308,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     }
 
     private fun circo(c: Canvas, x: Float, y: Float, r: Float, col: Int) {
-        sp.shader = null; sp.strokeWidth = 3.2f; sp.color = OUTLINE
+        sp.shader = null; sp.strokeWidth = 4.2f; sp.color = OUTLINE
         c.drawCircle(x, y, r, sp)
         circle(c, x, y, r, col)
     }
@@ -411,7 +421,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 rr(c, pk.x - 2.5f, by - 8f, pk.x + 2.5f, by - 4f, 1f, 0xFF8DA4AD.toInt())
                 circle(c, pk.x + 3f, by - 1f, 1.8f, 0xFFFF6F59.toInt())
             } else {
-                val s = when (pk.t) { "shotgun" -> "SG"; "sniper" -> "SN"; else -> "AR" }
+                val s = when (pk.t) { "shotgun" -> "SG"; "sniper" -> "SN"; "smg" -> "SM"; "rocket" -> "RK"; "flame" -> "FL"; "laser" -> "LS"; else -> "AR" }
                 text(c, s, pk.x, by + 4.5f, 13f, 0xFF04141C.toInt(), Paint.Align.CENTER, body)
             }
         }
@@ -447,9 +457,9 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         path.reset()
         path.moveTo(hx, hy)
         path.quadTo(kx, ky, fx, fy)
-        sp.shader = null; sp.color = OUTLINE; sp.strokeWidth = 8.6f
+        sp.shader = null; sp.color = OUTLINE; sp.strokeWidth = 10.6f
         c.drawPath(path, sp)
-        sp.color = col; sp.strokeWidth = 6f
+        sp.color = col; sp.strokeWidth = 7.6f
         c.drawPath(path, sp)
         rro(c, fx - 4f, fy - 3f, fx + 6f, fy + 2f, 2.5f, 0xFF1B2C34.toInt())
     }
@@ -519,6 +529,19 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             "sniper" -> rr(c, 10f, -6f, 19f, -3f, 1f, TEAL)
             "shotgun" -> rr(c, 2f, -3f, 12f, 4f, 2f, 0xFF8A5A2B.toInt())
             "rifle" -> rr(c, 12f, 2f, 17f, 9f, 1f, 0xFF1C262B.toInt())
+            "smg" -> rr(c, 9f, 2f, 13f, 10f, 1f, 0xFF1C262B.toInt())
+            "rocket" -> {
+                rro(c, 0f, -6f, 5f + w.len, 6f, 3f, 0xFF59693F.toInt())
+                rr(c, 5f + w.len - 4f, -7f, 5f + w.len + 2f, 7f, 2f, 0xFF2B3A42.toInt())
+            }
+            "flame" -> {
+                rro(c, 2f, -8f, 13f, 5f, 3f, 0xFFD9553A.toInt())
+                rr(c, 5f + w.len - 2f, -4.5f, 5f + w.len + 3f, 4.5f, 2f, 0xFF2B3A42.toInt())
+            }
+            "laser" -> {
+                rr(c, 10f, -5f, 5f + w.len - 4f, -2.5f, 1f, 0xFF00E5FF.toInt())
+                rr(c, 6f, 2f, 11f, 8f, 1f, 0xFF1C262B.toInt())
+            }
         }
         if (e.flash > 0f) {
             val fx = 5f + w.len + 3f
@@ -574,27 +597,28 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             }
             // back leg, back arm, front leg
             leg(c, e, e.run + PI_F, dark, true)
-            line(c, 0f, -27f, 3f + cos(la) * 12f, -27f + sin(la) * 12f, 8f, OUTLINE)
-            line(c, 0f, -27f, 3f + cos(la) * 12f, -27f + sin(la) * 12f, 5f, dark)
+            line(c, 0f, -27f, 3f + cos(la) * 12f, -27f + sin(la) * 12f, 10f, OUTLINE)
+            line(c, 0f, -27f, 3f + cos(la) * 12f, -27f + sin(la) * 12f, 6.6f, dark)
             leg(c, e, e.run, bodyC, false)
             if (sk.acc == 7) cape(c, dark)
             // torso
-            rro(c, -8f, -34f, 8f, -14f, 5f, bodyC)
-            rr(c, -8f, -20f, 8f, -17f, 0f, dark)
+            rro(c, -9.5f, -35f, 9.5f, -14f, 6f, bodyC)
+            rr(c, -9.5f, -21f, 9.5f, -17f, 0f, dark)
             rr(c, -6f, -33f, 2f, -25f, 3f, (light and 0x00FFFFFF) or 0x99000000.toInt())
             // head
-            circo(c, 1f, -40f, 9f, bodyC)
-            circle(c, -1.5f, -43f, 5f, (light and 0x00FFFFFF) or 0x99000000.toInt())
-            oval(c, 5f, -40f, 5.5f, 4f, 0xFF2B8CA3.toInt())
-            oval(c, 5f, -39f, 4.5f, 2.8f, 0xFF8FE3F5.toInt())
-            oval(c, 3.5f, -41.5f, 2.5f, 1.2f, 0xBFFFFFFF.toInt())
-            accessory(c, sk, dark, light)
+            circo(c, 1f, -42f, 12.5f, bodyC)
+            circle(c, -2.5f, -47f, 6.5f, (light and 0x00FFFFFF) or 0x99000000.toInt())
+            oval(c, 6.5f, -42f, 7.5f, 5.6f, 0xFF2B8CA3.toInt())
+            oval(c, 6.5f, -41f, 6.4f, 4.1f, 0xFF8FE3F5.toInt())
+            oval(c, 4.5f, -43.8f, 3.4f, 1.6f, 0xBFFFFFFF.toInt())
+            c.save(); c.translate(0f, -3.5f); accessory(c, sk, dark, light); c.restore()
             // front arm and gun
             c.save()
             c.translate(1f, -27f)
             c.rotate(la * 180f / PI_F)
-            line(c, 0f, 0f, 9f, 0f, 8f, OUTLINE)
-            line(c, 0f, 0f, 9f, 0f, 5f, bodyC)
+            c.scale(1.12f, 1.12f)
+            line(c, 0f, 0f, 9f, 0f, 10f, OUTLINE)
+            line(c, 0f, 0f, 9f, 0f, 6.6f, bodyC)
             drawGun(c, e)
             circle(c, 9f, 0f, 2.8f, light)
             c.restore()
@@ -605,33 +629,63 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         c.save()
         c.translate(e.x, e.y)
         if (game.isMe(e)) {
-            text(c, game.nameOf(e.id), 0f, -62f, 12f, TEAL, Paint.Align.CENTER, body)
-            val yy = -72f + sin(game.t * 4f) * 2f
+            text(c, game.nameOf(e.id), 0f, -70f, 12f, TEAL, Paint.Align.CENTER, body)
+            val yy = -80f + sin(game.t * 4f) * 2f
             path.reset()
             path.moveTo(0f, yy); path.lineTo(-7f, yy - 10f); path.lineTo(7f, yy - 10f); path.close()
             p.shader = null; p.style = Paint.Style.FILL; p.color = TEAL
             c.drawPath(path, p)
         } else {
             val nameCol = if (team) teamCol else 0xE6FFFFFF.toInt()
-            text(c, game.nameOf(e.id), 0f, -66f, 12f, nameCol, Paint.Align.CENTER, body)
-            rr(c, -18f, -62f, 18f, -57f, 2.5f, 0x80000000.toInt())
+            text(c, game.nameOf(e.id), 0f, -74f, 12f, nameCol, Paint.Align.CENTER, body)
+            rr(c, -18f, -70f, 18f, -65f, 2.5f, 0x80000000.toInt())
             val hpCol = if (e.hp > 50f) 0xFF5EE06B.toInt() else if (e.hp > 25f) 0xFFFFD23F.toInt() else RED
-            rr(c, -18f, -62f, -18f + max(0f, 36f * e.hp / 100f), -57f, 2.5f, hpCol)
+            rr(c, -18f, -70f, -18f + max(0f, 36f * e.hp / 100f), -65f, 2.5f, hpCol)
         }
         c.restore()
         if (e.reload > 0f) {
             val w = WEAPONS.getValue(e.wp)
-            rr(c, e.x - 14f, e.y - 56f, e.x + 14f, e.y - 53f, 1.5f, 0x33FFFFFF)
-            rr(c, e.x - 14f, e.y - 56f, e.x - 14f + 28f * (1f - e.reload / w.rel), e.y - 53f, 1.5f, AMBER)
+            rr(c, e.x - 14f, e.y - 62f, e.x + 14f, e.y - 59f, 1.5f, 0x33FFFFFF)
+            rr(c, e.x - 14f, e.y - 62f, e.x - 14f + 28f * (1f - e.reload / w.rel), e.y - 59f, 1.5f, AMBER)
         }
     }
 
     private fun drawBullets(c: Canvas) {
         for (b in game.bullets) {
-            val tx = b.x - b.vx * b.tr
-            val ty = b.y - b.vy * b.tr
-            line(c, tx, ty, b.x, b.y, if (b.big) 7f else 5.5f, 0x59FFC85A)
-            line(c, tx, ty, b.x, b.y, if (b.big) 3f else 2f, 0xFFFFFBE0.toInt())
+            when (b.kind) {
+                1 -> {
+                    c.save()
+                    c.translate(b.x, b.y)
+                    c.rotate(atan2(b.vy, b.vx) * 180f / PI_F)
+                    path.reset()
+                    path.moveTo(-9f, -3f); path.lineTo(-20f - Math.random().toFloat() * 8f, 0f); path.lineTo(-9f, 3f); path.close()
+                    p.shader = null; p.style = Paint.Style.FILL; p.color = 0xE6FF9B3D.toInt()
+                    c.drawPath(path, p)
+                    rro(c, -9f, -3.2f, 8f, 3.2f, 2f, 0xFFC9D4D8.toInt())
+                    path.reset()
+                    path.moveTo(8f, -3.2f); path.lineTo(15f, 0f); path.lineTo(8f, 3.2f); path.close()
+                    p.color = 0xFFFF5A5A.toInt()
+                    c.drawPath(path, p)
+                    c.restore()
+                }
+                2 -> {
+                    circle(c, b.x, b.y, 9f, 0x44FF6A2D)
+                    circle(c, b.x, b.y, 5.5f, 0x99FFA63D.toInt())
+                    circle(c, b.x, b.y, 2.8f, 0xCCFFF0AA.toInt())
+                }
+                3 -> {
+                    val tx = b.x - b.vx * .03f
+                    val ty = b.y - b.vy * .03f
+                    line(c, tx, ty, b.x, b.y, 9f, 0x4400E5FF)
+                    line(c, tx, ty, b.x, b.y, 3f, 0xFFB8F8FF.toInt())
+                }
+                else -> {
+                    val tx = b.x - b.vx * b.tr
+                    val ty = b.y - b.vy * b.tr
+                    line(c, tx, ty, b.x, b.y, if (b.big) 7f else 5.5f, 0x59FFC85A)
+                    line(c, tx, ty, b.x, b.y, if (b.big) 3f else 2f, 0xFFFFFBE0.toInt())
+                }
+            }
         }
     }
 
@@ -678,6 +732,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             "move" -> Ctl((edge + insetL) / W, (H - dp(88f)) / H, 1f)
             "aim" -> Ctl((W - edge - insetR) / W, (H - dp(88f)) / H, 1f)
             "gren" -> Ctl((W - edge - insetR) / W, (H - dp(88f) - dp(112f)) / H, 1f)
+            "scope" -> Ctl((W - edge - insetR - dp(88f)) / W, (H - dp(88f) - dp(34f)) / H, 1f)
             else -> Ctl(.5f, (H - dp(12f) - dp(26f)) / H, 1f)
         }
     }
@@ -729,6 +784,10 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         val gs = dp(30f)
         bGren.set(grenCx - gs, grenCy - gs, grenCx + gs, grenCy + gs)
         scaleRect(bGren, grenCx, grenCy, g.s, grenR)
+        val sc = ctl.getValue("scope")
+        scopeCx = sc.fx * W; scopeCy = sc.fy * H
+        bScope.set(scopeCx - gs, scopeCy - gs, scopeCx + gs, scopeCy + gs)
+        scaleRect(bScope, scopeCx, scopeCy, sc.s, scopeR)
         // weapon bar: two slots and a reload button
         val w = ctl.getValue("weap")
         barCx = w.fx * W; barCy = w.fy * H
@@ -832,7 +891,97 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             "sniper" -> rr(c, x0 + len * .3f, cy - 7f * k, x0 + len * .55f, cy - 3f * k, 1f, TEAL)
             "shotgun" -> rr(c, x0, cy - 3f * k, x0 + len * .3f, cy + 5f * k, 2f, 0xFFC98A4B.toInt())
             "rifle" -> rr(c, x0 + len * .35f, cy + 3f * k, x0 + len * .5f, cy + 10f * k, 1f, col)
+            "smg" -> rr(c, x0 + len * .35f, cy + 3f * k, x0 + len * .5f, cy + 9f * k, 1f, col)
+            "rocket" -> rr(c, x0, cy - 5f * k, x0 + len, cy + 5f * k, 3f, col)
+            "flame" -> rr(c, x0 + len * .1f, cy - 7f * k, x0 + len * .45f, cy + 4f * k, 2f, 0xFFFF8A3D.toInt())
+            "laser" -> rr(c, x0 + len * .3f, cy - 5f * k, x0 + len * .75f, cy - 3f * k, 1f, 0xFF00E5FF.toInt())
             else -> rr(c, x0 + len * .1f, cy + 3f * k, x0 + len * .3f, cy + 9f * k, 2f, col)
+        }
+    }
+
+    private fun zoomLabel(z: Float): String = (if (z % 1f == 0f) z.toInt().toString() else String.format("%.1f", z)) + "x"
+
+    private fun drawScopeButton(c: Canvas) {
+        val z = game.zoomLevel()
+        val on = abs(z - 4f) > .1f
+        glass(c, bScope.left, bScope.top, bScope.right, bScope.bottom, bScope.height() / 2f, dp(1f))
+        if (on) {
+            sp.shader = null; sp.strokeWidth = dp(2f); sp.color = AMBER
+            rect.set(bScope)
+            c.drawRoundRect(rect, bScope.height() / 2f, bScope.height() / 2f, sp)
+        }
+        val cx = bScope.centerX()
+        val cy = bScope.centerY() - dp(5f)
+        sp.shader = null; sp.strokeWidth = dp(1.8f); sp.color = WHITE
+        c.drawCircle(cx, cy, dp(9f), sp)
+        c.drawLine(cx - dp(13f), cy, cx - dp(4f), cy, sp); c.drawLine(cx + dp(4f), cy, cx + dp(13f), cy, sp)
+        c.drawLine(cx, cy - dp(13f), cx, cy - dp(4f), sp); c.drawLine(cx, cy + dp(4f), cx, cy + dp(13f), sp)
+        text(c, zoomLabel(z), cx, bScope.centerY() + dp(19f), dp(11f), if (on) AMBER else WHITE, Paint.Align.CENTER, fDisplay)
+    }
+
+    /** Scope overlay when zoomed in or out; every weapon has its own reticle. */
+    private fun drawScope(c: Canvas) {
+        val g = game
+        val pl = g.player
+        if (g.mode != Mode.PLAY || g.paused || !pl.alive || !g.isMe(pl)) return
+        if (abs(g.zoomCur - 4f) < .2f) return
+        val w = WEAPONS.getValue(pl.wp)
+        val sx = (pl.x + cos(pl.aim) * 86f - g.camX) * scale
+        val sy = (pl.y - 28f + sin(pl.aim) * 86f - g.camY) * scale
+        val big = min(W, H)
+        when (w.reticle) {
+            4 -> {
+                val r = big * .40f
+                scopePath.reset(); scopePath.fillType = Path.FillType.INVERSE_EVEN_ODD
+                scopePath.addCircle(sx, sy, r, Path.Direction.CW)
+                p.shader = null; p.style = Paint.Style.FILL; p.color = 0xE6040C12.toInt()
+                c.drawPath(scopePath, p)
+                sp.shader = null; sp.strokeWidth = dp(2f); sp.color = 0xCCFFFFFF.toInt()
+                c.drawCircle(sx, sy, r, sp)
+                sp.strokeWidth = dp(1f); sp.color = 0x99FFFFFF.toInt()
+                c.drawLine(sx - r, sy, sx - dp(10f), sy, sp); c.drawLine(sx + dp(10f), sy, sx + r, sy, sp)
+                c.drawLine(sx, sy - r, sx, sy - dp(10f), sp); c.drawLine(sx, sy + dp(10f), sx, sy + r, sp)
+                for (i in 1..4) {
+                    val o = dp(26f) * i
+                    c.drawLine(sx + o, sy - dp(4f), sx + o, sy + dp(4f), sp); c.drawLine(sx - o, sy - dp(4f), sx - o, sy + dp(4f), sp)
+                    c.drawLine(sx - dp(4f), sy + o, sx + dp(4f), sy + o, sp)
+                }
+                circle(c, sx, sy, dp(2f), RED)
+            }
+            1 -> {
+                scopePath.reset(); scopePath.fillType = Path.FillType.INVERSE_EVEN_ODD
+                scopePath.addCircle(sx, sy, big * .55f, Path.Direction.CW)
+                p.shader = null; p.style = Paint.Style.FILL; p.color = 0x66040C12
+                c.drawPath(scopePath, p)
+                sp.shader = null; sp.strokeWidth = dp(1.8f); sp.color = 0xCCFF5A5A.toInt()
+                c.drawCircle(sx, sy, dp(30f), sp)
+                circle(c, sx, sy, dp(3f), 0xFFFF5A5A.toInt())
+                c.drawLine(sx - dp(42f), sy, sx - dp(30f), sy, sp); c.drawLine(sx + dp(30f), sy, sx + dp(42f), sy, sp)
+            }
+            2 -> {
+                sp.shader = null; sp.strokeWidth = dp(1.6f); sp.color = 0xAAFFFFFF.toInt()
+                c.drawCircle(sx, sy, dp(46f), sp)
+                for (a in 0 until 4) {
+                    val ax = cos(a * PI_F / 2f); val ay = sin(a * PI_F / 2f)
+                    c.drawLine(sx + ax * dp(46f), sy + ay * dp(46f), sx + ax * dp(58f), sy + ay * dp(58f), sp)
+                }
+                circle(c, sx, sy, dp(2f), 0xFFFFFFFF.toInt())
+            }
+            3 -> {
+                sp.shader = null; sp.strokeWidth = dp(2f); sp.color = 0xCCFFB347.toInt()
+                val k = dp(34f); val l = dp(12f)
+                for (ix in intArrayOf(-1, 1)) for (iy in intArrayOf(-1, 1)) {
+                    c.drawLine(sx + ix * k, sy + iy * k, sx + ix * (k - l), sy + iy * k, sp)
+                    c.drawLine(sx + ix * k, sy + iy * k, sx + ix * k, sy + iy * (k - l), sp)
+                }
+                circle(c, sx, sy, dp(2f), 0xFFFFB347.toInt())
+            }
+            else -> {
+                sp.shader = null; sp.strokeWidth = dp(1.4f); sp.color = 0xCCFFFFFF.toInt()
+                c.drawCircle(sx, sy, dp(14f), sp)
+                c.drawLine(sx - dp(24f), sy, sx - dp(14f), sy, sp); c.drawLine(sx + dp(14f), sy, sx + dp(24f), sy, sp)
+                circle(c, sx, sy, dp(2f), 0xFFFFFFFF.toInt())
+            }
         }
     }
 
@@ -968,6 +1117,10 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         c.save(); c.translate(grenCx, grenCy); c.scale(g.s, g.s); c.translate(-grenCx, -grenCy)
         drawGrenadeButton(c, pl)
         c.restore()
+        val sc = ctl.getValue("scope")
+        c.save(); c.translate(scopeCx, scopeCy); c.scale(sc.s, sc.s); c.translate(-scopeCx, -scopeCy)
+        drawScopeButton(c)
+        c.restore()
         val w = ctl.getValue("weap")
         c.save(); c.translate(barCx, barCy); c.scale(w.s, w.s); c.translate(-barCx, -barCy)
         drawWeaponBar(c, pl)
@@ -980,6 +1133,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             "move" -> out.set(lcx - lR, lcy - lR, lcx + lR, lcy + lR)
             "aim" -> out.set(rcx - rR, rcy - rR, rcx + rR, rcy + rR)
             "gren" -> out.set(grenR)
+            "scope" -> out.set(scopeR)
             else -> out.set(slotR[0].left, min(slotR[0].top, reloadR.top), reloadR.right, max(slotR[1].bottom, reloadR.bottom))
         }
     }
@@ -1030,7 +1184,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         if (x >= sliderR.left - dp(14f) && x <= sliderR.right + dp(14f) && abs(y - sliderR.centerY()) <= dp(18f)) {
             sliderDrag = true; setSize(x); return
         }
-        for (k in listOf("weap", "gren", "aim", "move")) {
+        for (k in listOf("weap", "gren", "scope", "aim", "move")) {
             ctlBounds(k, tmpR)
             if (tmpR.contains(x, y)) {
                 editSel = k
@@ -1289,8 +1443,9 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         drawBullets(c)
         drawParts(c)
         drawDamageTexts(c)
-        if (game.mode == Mode.PLAY && !game.paused) drawAim(c)
+        if (game.mode == Mode.PLAY && !game.paused && abs(game.zoomCur - 4f) < .2f) drawAim(c)
         c.restore()
+        drawScope(c)
         if (game.mode == Mode.PLAY || game.mode == Mode.OVER) {
             if (game.vigT > 0f) {
                 vigPaint.alpha = (min(1f, game.vigT) * 255f).toInt()
@@ -1394,6 +1549,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             if (muteR.contains(x, y)) { btnPtr = id; btnKind = "mute"; return }
             if (grenR.contains(x, y)) { btnPtr = id; btnKind = "gren"; return }
             if (reloadR.contains(x, y)) { btnPtr = id; btnKind = "reload"; return }
+            if (scopeR.contains(x, y)) { btnPtr = id; btnKind = "scope"; return }
             if (slotR[0].contains(x, y)) { btnPtr = id; btnKind = "slot0"; return }
             if (slotR[1].contains(x, y)) { btnPtr = id; btnKind = "slot1"; return }
             // the sticks only respond on their own pads
@@ -1447,6 +1603,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 "mute" -> muteR.contains(x, y)
                 "gren" -> grenR.contains(x, y)
                 "reload" -> reloadR.contains(x, y)
+                "scope" -> scopeR.contains(x, y)
                 "slot0" -> slotR[0].contains(x, y)
                 "slot1" -> slotR[1].contains(x, y)
                 else -> false
@@ -1456,6 +1613,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 "mute" -> sfx.muted = !sfx.muted
                 "gren" -> actions.add(Runnable { g.reqG++ })
                 "reload" -> actions.add(Runnable { g.reqR++ })
+                "scope" -> actions.add(Runnable { g.scopeStep() })
                 "slot0" -> actions.add(Runnable { g.reqSV = 0; g.reqS++ })
                 "slot1" -> actions.add(Runnable { g.reqSV = 1; g.reqS++ })
             }
