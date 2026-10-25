@@ -1,5 +1,7 @@
 package com.xcluice.jetstrike
 
+import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.LinearGradient
@@ -10,9 +12,11 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.os.Build
+import android.text.InputFilter
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.widget.EditText
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.abs
 import kotlin.math.cos
@@ -103,11 +107,40 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private val grenR = RectF()
     private val reloadR = RectF()
     private val slotR = arrayOf(RectF(), RectF())
+    private val bGren = RectF()
+    private val bReload = RectF()
+    private val bSlot = arrayOf(RectF(), RectF())
     private var lcx = 0f
     private var lcy = 0f
     private var rcx = 0f
     private var rcy = 0f
-    private var stickR = 0f
+    private var lR = 0f
+    private var rR = 0f
+    private var grenCx = 0f
+    private var grenCy = 0f
+    private var barCx = 0f
+    private var barCy = 0f
+
+    // customisable control layout (position as screen fractions, plus a size multiplier)
+    private class Ctl(var fx: Float, var fy: Float, var s: Float)
+    private val ctl = HashMap<String, Ctl>()
+    private val CTL_KEYS = listOf("move", "aim", "gren", "weap")
+    private val CTL_NAMES = mapOf("move" to "MOVE STICK", "aim" to "AIM / FIRE STICK", "gren" to "GRENADE BUTTON", "weap" to "WEAPON BAR")
+    private val CTL_MIN = .6f
+    private val CTL_MAX = 1.6f
+    private var ctlLoaded = false
+    @Volatile private var editing = false
+    private var editSel = "move"
+    private var editPtr = -1
+    private var dragging = false
+    private var sliderDrag = false
+    private var dragDx = 0f
+    private var dragDy = 0f
+    private val sliderR = RectF()
+    private val editDoneR = RectF()
+    private val editResetR = RectF()
+    private val tmpR = RectF()
+    private val previewEnt = Ent(99, SKINS[0], 0)
 
     private var hostList: List<HostInfo> = emptyList()
     private var ipCache = ""
@@ -119,9 +152,12 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private var uiOy = 0f
     private val backBtn = Btn("back", 372f, 18f, 448f, 52f)
     private val menuBtns = listOf(
-        Btn("team", 36f, 106f, 238f, 144f), Btn("solo", 242f, 106f, 444f, 144f),
-        Btn("easy", 36f, 152f, 168f, 188f), Btn("normal", 174f, 152f, 306f, 188f), Btn("hard", 312f, 152f, 444f, 188f),
-        Btn("offline", 36f, 200f, 214f, 252f), Btn("host", 220f, 200f, 330f, 252f), Btn("join", 336f, 200f, 444f, 252f)
+        Btn("team", 204f, 82f, 328f, 112f), Btn("solo", 334f, 82f, 460f, 112f),
+        Btn("easy", 204f, 134f, 284f, 160f), Btn("normal", 290f, 134f, 374f, 160f), Btn("hard", 380f, 134f, 460f, 160f),
+        Btn("offline", 204f, 172f, 460f, 218f),
+        Btn("host", 204f, 228f, 284f, 266f), Btn("join", 292f, 228f, 372f, 266f), Btn("ctl", 380f, 228f, 460f, 266f),
+        Btn("prev", 24f, 128f, 50f, 164f), Btn("next", 158f, 128f, 184f, 164f),
+        Btn("name", 20f, 238f, 188f, 278f)
     )
     private val hostBtns = listOf(
         backBtn,
@@ -144,7 +180,9 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         if (!DIFFS.containsKey(game.diff)) game.diff = "normal"
         game.menuRules = if (prefs.getInt("rules", 0) == 1) Rules.SOLO else Rules.TEAM
         game.sfx = { n, v -> sfx.play(n, v) }
-        titlePaint.shader = LinearGradient(116f, 0f, 400f, 0f,
+        game.mySkin = prefs.getInt("skin", 0).coerceIn(0, SKINS.size - 1)
+        game.myName = (prefs.getString("name", "Player") ?: "Player").take(12)
+        titlePaint.shader = LinearGradient(68f, 0f, 270f, 0f,
             intArrayOf(TEAL, 0xFFFFD23F.toInt(), 0xFFFF8A3D.toInt()), floatArrayOf(0f, .55f, 1f), Shader.TileMode.CLAMP)
         playPaint.shader = LinearGradient(36f, 0f, 444f, 0f,
             intArrayOf(TEAL, 0xFFFFD23F.toInt(), 0xFFFF8A3D.toInt()), floatArrayOf(0f, .6f, 1f), Shader.TileMode.CLAMP)
@@ -202,6 +240,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     }
 
     fun handleBack(): Boolean {
+        if (editing) { actions.add(Runnable { finishEdit() }); return true }
         val m = game.mode
         if (m == Mode.MENU) return false
         if (m == Mode.PLAY) {
@@ -415,6 +454,63 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         rro(c, fx - 4f, fy - 3f, fx + 6f, fy + 2f, 2.5f, 0xFF1B2C34.toInt())
     }
 
+    private fun fin(c: Canvas, x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float, col: Int) {
+        path.reset()
+        path.moveTo(x1, y1); path.lineTo(x2, y2); path.lineTo(x3, y3); path.close()
+        sp.shader = null; sp.strokeWidth = 2.6f; sp.color = OUTLINE
+        c.drawPath(path, sp)
+        p.shader = null; p.style = Paint.Style.FILL; p.color = col
+        c.drawPath(path, p)
+    }
+
+    private fun accessory(c: Canvas, sk: Skin, dark: Int, light: Int) {
+        when (sk.acc) {
+            0 -> {
+                line(c, -2f, -48f, -6f, -58f, 3.6f, OUTLINE); line(c, -2f, -48f, -6f, -58f, 1.4f, light)
+                circo(c, -6f, -59f, 2.6f, light)
+            }
+            1 -> fin(c, -7f, -46f, -3f, -62f, 3f, -48f, dark)
+            2 -> for (k in 0..2) {
+                val x = -4f + k * 4.5f
+                fin(c, x - 2.6f, -48f, x, -57f - (if (k == 1) 3f else 0f), x + 2.6f, -48f, light)
+            }
+            3 -> {
+                rro(c, -8.5f, -45f, 10.5f, -41.5f, 1.5f, dark)
+                val w = sin(game.t * 9f) * 2f
+                line(c, -8f, -43f, -19f, -40f + w, 4f, OUTLINE); line(c, -8f, -43f, -19f, -40f + w, 2f, light)
+                line(c, -8f, -43f, -17f, -46f - w, 4f, OUTLINE); line(c, -8f, -43f, -17f, -46f - w, 2f, light)
+            }
+            4 -> {
+                rect.set(-6f, -60f, 8f, -54f)
+                sp.shader = null; sp.strokeWidth = 4f; sp.color = OUTLINE
+                c.drawOval(rect, sp)
+                sp.strokeWidth = 2f; sp.color = light
+                c.drawOval(rect, sp)
+            }
+            5 -> {
+                fin(c, -7f, -47f, -5.5f, -59f, -1f, -49f, dark)
+                fin(c, 2f, -49f, 5.5f, -59f, 8f, -46f, dark)
+            }
+            6 -> {
+                line(c, -3f, -48f, -9f, -58f, 3.6f, OUTLINE); line(c, -3f, -48f, -9f, -58f, 1.4f, light)
+                line(c, 3f, -48f, 8f, -58f, 3.6f, OUTLINE); line(c, 3f, -48f, 8f, -58f, 1.4f, light)
+                circle(c, -9f, -58.5f, 2f, light); circle(c, 8f, -58.5f, 2f, light)
+            }
+        }
+    }
+
+    private fun cape(c: Canvas, dark: Int) {
+        path.reset()
+        path.moveTo(-6f, -33f)
+        path.quadTo(-24f, -22f, -22f + sin(game.t * 4f) * 2f, -4f)
+        path.lineTo(-10f, -12f)
+        path.close()
+        sp.shader = null; sp.strokeWidth = 2.8f; sp.color = OUTLINE
+        c.drawPath(path, sp)
+        p.shader = null; p.style = Paint.Style.FILL; p.color = dark
+        c.drawPath(path, p)
+    }
+
     private fun drawGun(c: Canvas, e: Ent) {
         val w = WEAPONS.getValue(e.wp)
         rro(c, 5f, -3f, 5f + w.len, 3f, 2f, 0xFF2B3A42.toInt())
@@ -434,7 +530,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         }
     }
 
-    private fun drawSoldier(c: Canvas, e: Ent) {
+    private fun drawSoldier(c: Canvas, e: Ent, tags: Boolean = true) {
         val sk = e.skin
         val hurt = e.hurt > 0f
         val bodyC = if (hurt) 0xFFFFFFFF.toInt() else sk.c
@@ -481,6 +577,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             line(c, 0f, -27f, 3f + cos(la) * 12f, -27f + sin(la) * 12f, 8f, OUTLINE)
             line(c, 0f, -27f, 3f + cos(la) * 12f, -27f + sin(la) * 12f, 5f, dark)
             leg(c, e, e.run, bodyC, false)
+            if (sk.acc == 7) cape(c, dark)
             // torso
             rro(c, -8f, -34f, 8f, -14f, 5f, bodyC)
             rr(c, -8f, -20f, 8f, -17f, 0f, dark)
@@ -491,6 +588,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             oval(c, 5f, -40f, 5.5f, 4f, 0xFF2B8CA3.toInt())
             oval(c, 5f, -39f, 4.5f, 2.8f, 0xFF8FE3F5.toInt())
             oval(c, 3.5f, -41.5f, 2.5f, 1.2f, 0xBFFFFFFF.toInt())
+            accessory(c, sk, dark, light)
             // front arm and gun
             c.save()
             c.translate(1f, -27f)
@@ -502,11 +600,13 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             c.restore()
             c.restore()
         }
-        // marker: arrow for you, name and health for everyone else
+        if (!tags) return
+        // marker: your name and an arrow, name and health for everyone else
         c.save()
         c.translate(e.x, e.y)
         if (game.isMe(e)) {
-            val yy = -62f + sin(game.t * 4f) * 2f
+            text(c, game.nameOf(e.id), 0f, -62f, 12f, TEAL, Paint.Align.CENTER, body)
+            val yy = -72f + sin(game.t * 4f) * 2f
             path.reset()
             path.moveTo(0f, yy); path.lineTo(-7f, yy - 10f); path.lineTo(7f, yy - 10f); path.close()
             p.shader = null; p.style = Paint.Style.FILL; p.color = TEAL
@@ -572,30 +672,79 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     }
 
     /* ---------- HUD ---------- */
+    private fun defCtl(k: String): Ctl {
+        val edge = max(dp(84f), W * .13f)
+        return when (k) {
+            "move" -> Ctl((edge + insetL) / W, (H - dp(88f)) / H, 1f)
+            "aim" -> Ctl((W - edge - insetR) / W, (H - dp(88f)) / H, 1f)
+            "gren" -> Ctl((W - edge - insetR) / W, (H - dp(88f) - dp(112f)) / H, 1f)
+            else -> Ctl(.5f, (H - dp(12f) - dp(26f)) / H, 1f)
+        }
+    }
+
+    private fun loadCtl() {
+        for (k in CTL_KEYS) {
+            val df = defCtl(k)
+            ctl[k] = Ctl(prefs.getFloat("c_${k}_x", df.fx), prefs.getFloat("c_${k}_y", df.fy),
+                prefs.getFloat("c_${k}_s", 1f).coerceIn(CTL_MIN, CTL_MAX))
+        }
+    }
+
+    private fun saveCtl() {
+        val ed = prefs.edit()
+        for ((k, v) in ctl) { ed.putFloat("c_${k}_x", v.fx); ed.putFloat("c_${k}_y", v.fy); ed.putFloat("c_${k}_s", v.s) }
+        ed.apply()
+    }
+
+    private fun resetCtl() {
+        val ed = prefs.edit()
+        for (k in CTL_KEYS) { ed.remove("c_${k}_x"); ed.remove("c_${k}_y"); ed.remove("c_${k}_s") }
+        ed.apply()
+        ctl.clear(); loadCtl(); layoutHud()
+    }
+
+    private fun finishEdit() {
+        saveCtl()
+        editing = false
+        editPtr = -1; dragging = false; sliderDrag = false
+    }
+
+    private fun scaleRect(r: RectF, cx: Float, cy: Float, k: Float, out: RectF) {
+        out.set(cx + (r.left - cx) * k, cy + (r.top - cy) * k, cx + (r.right - cx) * k, cy + (r.bottom - cy) * k)
+    }
+
     private fun layoutHud() {
+        if (!ctlLoaded || ctl.isEmpty()) { loadCtl(); ctlLoaded = true }
         val mr = dp(12f) + insetR
         val top = dp(10f)
         val bs = dp(42f)
-        stickR = dp(56f)
-        val edge = max(dp(84f), W * .13f)
-        lcx = edge + insetL; lcy = H - dp(88f)
-        rcx = W - edge - insetR; rcy = H - dp(88f)
         pauseR.set(W - mr - bs, top, W - mr, top + bs)
         muteR.set(W - mr - bs * 2f - dp(8f), top, W - mr - bs - dp(8f), top + bs)
+        val m = ctl.getValue("move")
+        lcx = m.fx * W; lcy = m.fy * H; lR = dp(56f) * m.s
+        val a = ctl.getValue("aim")
+        rcx = a.fx * W; rcy = a.fy * H; rR = dp(56f) * a.s
+        val g = ctl.getValue("gren")
+        grenCx = g.fx * W; grenCy = g.fy * H
         val gs = dp(30f)
-        val gcy = rcy - dp(112f)
-        grenR.set(rcx - gs, gcy - gs, rcx + gs, gcy + gs)
-        // weapon bar: two slots and a reload button, bottom centre
+        bGren.set(grenCx - gs, grenCy - gs, grenCx + gs, grenCy + gs)
+        scaleRect(bGren, grenCx, grenCy, g.s, grenR)
+        // weapon bar: two slots and a reload button
+        val w = ctl.getValue("weap")
+        barCx = w.fx * W; barCy = w.fy * H
         val sw = dp(112f)
         val sh = dp(52f)
         val gap = dp(6f)
         val rs = dp(46f)
         val total = sw * 2f + gap * 2f + rs
-        val x0 = (W - total) / 2f
-        val y0 = H - sh - dp(12f)
-        slotR[0].set(x0, y0, x0 + sw, y0 + sh)
-        slotR[1].set(x0 + sw + gap, y0, x0 + sw * 2f + gap, y0 + sh)
-        reloadR.set(x0 + sw * 2f + gap * 2f, y0 + (sh - rs) / 2f, x0 + total, y0 + (sh + rs) / 2f)
+        val x0 = barCx - total / 2f
+        val y0 = barCy - sh / 2f
+        bSlot[0].set(x0, y0, x0 + sw, y0 + sh)
+        bSlot[1].set(x0 + sw + gap, y0, x0 + sw * 2f + gap, y0 + sh)
+        bReload.set(x0 + sw * 2f + gap * 2f, y0 + (sh - rs) / 2f, x0 + total, y0 + (sh + rs) / 2f)
+        scaleRect(bSlot[0], barCx, barCy, w.s, slotR[0])
+        scaleRect(bSlot[1], barCx, barCy, w.s, slotR[1])
+        scaleRect(bReload, barCx, barCy, w.s, reloadR)
     }
 
     private fun statRow(c: Canvas, label: String, x: Float, y: Float, w: Float, frac: Float, col: Int, num: String) {
@@ -608,15 +757,15 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         text(c, num, x + w, y + dp(4f), dp(12f), WHITE, Paint.Align.RIGHT, body)
     }
 
-    private fun drawStick(c: Canvas, cx: Float, cy: Float, kx: Float, ky: Float, active: Boolean, label: String, warm: Boolean) {
-        val r = stickR
+    private fun drawStick(c: Canvas, cx: Float, cy: Float, kx: Float, ky: Float, active: Boolean, label: String, warm: Boolean, k: Float) {
+        val r = dp(56f) * k
         circle(c, cx, cy, r, if (active) 0x40FFFFFF else 0x1CFFFFFF)
         sp.shader = null; sp.strokeWidth = dp(1.5f); sp.color = if (active) 0x99FFFFFF.toInt() else 0x55FFFFFF
         c.drawCircle(cx, cy, r, sp)
         sp.strokeWidth = dp(1f); sp.color = 0x22FFFFFF
         c.drawCircle(cx, cy, r * .5f, sp)
         val knob = if (warm) (if (active) 0xDDFFB347.toInt() else 0x66FFB347) else (if (active) 0xCCFFFFFF.toInt() else 0x66FFFFFF)
-        circle(c, cx + kx * r, cy + ky * r, dp(26f), knob)
+        circle(c, cx + kx * r, cy + ky * r, dp(26f) * k, knob)
         text(c, label, cx, cy + r + dp(15f), dp(10f), 0x99FFFFFF.toInt(), Paint.Align.CENTER, body, .15f)
     }
 
@@ -631,7 +780,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
     private fun drawWeaponBar(c: Canvas, pl: Ent) {
         for (i in 0..1) {
-            val r = slotR[i]
+            val r = bSlot[i]
             val key = pl.wps[i]
             val sel = pl.cur == i
             glass(c, r.left, r.top, r.right, r.bottom, dp(14f), dp(1f))
@@ -664,9 +813,9 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 rr(c, r.left + dp(10f), r.bottom - dp(8f), r.left + dp(10f) + (r.width() - dp(20f)) * (1f - pl.reload / w.rel), r.bottom - dp(5f), dp(2f), AMBER)
             }
         }
-        roundBtn(c, reloadR, pl.reload > 0f)
-        val rcx2 = reloadR.centerX()
-        val rcy2 = reloadR.centerY()
+        roundBtn(c, bReload, pl.reload > 0f)
+        val rcx2 = bReload.centerX()
+        val rcy2 = bReload.centerY()
         sp.shader = null; sp.strokeWidth = dp(2.4f); sp.color = WHITE
         rect.set(rcx2 - dp(8f), rcy2 - dp(8f), rcx2 + dp(8f), rcy2 + dp(8f))
         c.drawArc(rect, -40f, 270f, false, sp)
@@ -689,15 +838,15 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
     private fun drawGrenadeButton(c: Canvas, pl: Ent) {
         val ready = pl.grenades > 0 && pl.alive
-        roundBtn(c, grenR, false)
-        val cx = grenR.centerX()
-        val cy = grenR.centerY()
+        roundBtn(c, bGren, false)
+        val cx = bGren.centerX()
+        val cy = bGren.centerY()
         val a = if (ready) 0xFF else 0x66
         circle(c, cx, cy + dp(2f), dp(10f), (a shl 24) or 0x3A4A52)
         rr(c, cx - dp(3f), cy - dp(12f), cx + dp(3f), cy - dp(6f), dp(1.5f), (a shl 24) or 0x8DA4AD)
         circle(c, cx + dp(4f), cy - dp(2f), dp(2.2f), (a shl 24) or 0xFF6F59)
-        val bx = grenR.right - dp(6f)
-        val by = grenR.top + dp(8f)
+        val bx = bGren.right - dp(6f)
+        val by = bGren.top + dp(8f)
         circle(c, bx, by, dp(9f), if (ready) AMBER else 0x66FFB347)
         text(c, pl.grenades.toString(), bx, by + dp(4.5f), dp(12f), 0xFF04141C.toInt(), Paint.Align.CENTER, fDisplay)
     }
@@ -809,11 +958,120 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             text(c, max(1, Math.ceil(pl.respawn.toDouble()).toInt()).toString(), W / 2f, H * .3f + dp(52f), dp(22f), AMBER, Paint.Align.CENTER, fDisplay)
         }
 
-        // controls: fixed sticks, grenade, weapon bar
-        drawStick(c, lcx, lcy, lkx, lky, lId != -1, "MOVE / FLY", false)
-        drawStick(c, rcx, rcy, rkx, rky, rId != -1, "AIM / FIRE", true)
+        drawControls(c, pl)
+    }
+
+    private fun drawControls(c: Canvas, pl: Ent) {
+        drawStick(c, lcx, lcy, lkx, lky, lId != -1, "MOVE / FLY", false, ctl.getValue("move").s)
+        drawStick(c, rcx, rcy, rkx, rky, rId != -1, "AIM / FIRE", true, ctl.getValue("aim").s)
+        val g = ctl.getValue("gren")
+        c.save(); c.translate(grenCx, grenCy); c.scale(g.s, g.s); c.translate(-grenCx, -grenCy)
         drawGrenadeButton(c, pl)
+        c.restore()
+        val w = ctl.getValue("weap")
+        c.save(); c.translate(barCx, barCy); c.scale(w.s, w.s); c.translate(-barCx, -barCy)
         drawWeaponBar(c, pl)
+        c.restore()
+    }
+
+    /* ---------- control editor ---------- */
+    private fun ctlBounds(k: String, out: RectF) {
+        when (k) {
+            "move" -> out.set(lcx - lR, lcy - lR, lcx + lR, lcy + lR)
+            "aim" -> out.set(rcx - rR, rcy - rR, rcx + rR, rcy + rR)
+            "gren" -> out.set(grenR)
+            else -> out.set(slotR[0].left, min(slotR[0].top, reloadR.top), reloadR.right, max(slotR[1].bottom, reloadR.bottom))
+        }
+    }
+
+    private fun drawEdit(c: Canvas) {
+        c.drawRect(0f, 0f, W, H, p.apply { shader = null; style = Paint.Style.FILL; color = 0x88041420.toInt() })
+        drawControls(c, game.player)
+        for (k in CTL_KEYS) {
+            ctlBounds(k, tmpR)
+            tmpR.inset(-dp(6f), -dp(6f))
+            sp.shader = null
+            sp.strokeWidth = if (k == editSel) dp(2.4f) else dp(1.2f)
+            sp.color = if (k == editSel) AMBER else 0x66FFFFFF
+            c.drawRoundRect(tmpR, dp(16f), dp(16f), sp)
+        }
+        val pw = min(dp(470f), W - dp(24f))
+        val pl = (W - pw) / 2f
+        val top = dp(10f)
+        glass(c, pl, top, pl + pw, top + dp(54f), dp(18f), dp(1f))
+        text(c, CTL_NAMES[editSel] ?: "", pl + dp(14f), top + dp(23f), dp(12f), AMBER, Paint.Align.LEFT, body, .08f)
+        text(c, "drag it to move it", pl + dp(14f), top + dp(40f), dp(10f), MUTED, Paint.Align.LEFT, body)
+        val sx0 = pl + dp(150f)
+        val sx1 = pl + dp(290f)
+        val sy = top + dp(33f)
+        sliderR.set(sx0, sy - dp(3f), sx1, sy + dp(3f))
+        text(c, "SIZE", sx0, top + dp(20f), dp(10f), MUTED, Paint.Align.LEFT, body, .15f)
+        rr(c, sx0, sy - dp(3f), sx1, sy + dp(3f), dp(3f), 0x55FFFFFF)
+        val f = (ctl.getValue(editSel).s - CTL_MIN) / (CTL_MAX - CTL_MIN)
+        rr(c, sx0, sy - dp(3f), sx0 + (sx1 - sx0) * f, sy + dp(3f), dp(3f), AMBER)
+        circle(c, sx0 + (sx1 - sx0) * f, sy, dp(9f), WHITE)
+        editResetR.set(pl + dp(306f), top + dp(12f), pl + dp(376f), top + dp(42f))
+        editDoneR.set(pl + dp(384f), top + dp(12f), pl + dp(456f), top + dp(42f))
+        rr(c, editResetR.left, editResetR.top, editResetR.right, editResetR.bottom, dp(15f), 0x33FFFFFF)
+        text(c, "RESET", editResetR.centerX(), editResetR.centerY() + dp(4.5f), dp(12f), WHITE, Paint.Align.CENTER, body, .1f)
+        rr(c, editDoneR.left, editDoneR.top, editDoneR.right, editDoneR.bottom, dp(15f), AMBER)
+        text(c, "DONE", editDoneR.centerX(), editDoneR.centerY() + dp(4.5f), dp(12f), 0xFF04141C.toInt(), Paint.Align.CENTER, fDisplay, .1f)
+    }
+
+    private fun setSize(x: Float) {
+        val f = ((x - sliderR.left) / max(1f, sliderR.width())).coerceIn(0f, 1f)
+        ctl.getValue(editSel).s = CTL_MIN + f * (CTL_MAX - CTL_MIN)
+        layoutHud()
+    }
+
+    private fun editDown(x: Float, y: Float) {
+        if (editDoneR.contains(x, y)) { finishEdit(); return }
+        if (editResetR.contains(x, y)) { resetCtl(); return }
+        if (x >= sliderR.left - dp(14f) && x <= sliderR.right + dp(14f) && abs(y - sliderR.centerY()) <= dp(18f)) {
+            sliderDrag = true; setSize(x); return
+        }
+        for (k in listOf("weap", "gren", "aim", "move")) {
+            ctlBounds(k, tmpR)
+            if (tmpR.contains(x, y)) {
+                editSel = k
+                dragging = true
+                val cc = ctl.getValue(k)
+                dragDx = cc.fx * W - x
+                dragDy = cc.fy * H - y
+                return
+            }
+        }
+    }
+
+    private fun editMove(x: Float, y: Float) {
+        if (sliderDrag) { setSize(x); return }
+        if (dragging) {
+            val cc = ctl.getValue(editSel)
+            cc.fx = ((x + dragDx) / W).coerceIn(.04f, .96f)
+            cc.fy = ((y + dragDy) / H).coerceIn(.06f, .96f)
+            layoutHud()
+        }
+    }
+
+    private fun askName() {
+        val act = context as? Activity ?: return
+        act.runOnUiThread {
+            val et = EditText(act)
+            et.setText(game.myName)
+            et.setSingleLine()
+            et.filters = arrayOf(InputFilter.LengthFilter(12))
+            et.setSelection(et.text.length)
+            AlertDialog.Builder(act)
+                .setTitle("Your name")
+                .setView(et)
+                .setPositiveButton("Save") { _, _ ->
+                    val n = et.text.toString().trim().ifEmpty { "Player" }
+                    prefs.edit().putString("name", n).apply()
+                    actions.add(Runnable { game.myName = n })
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
     }
 
     /* ---------- overlays ---------- */
@@ -892,20 +1150,43 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             ghostBtn(c, pauseBtns[1], if (g.online) "LEAVE MATCH" else "QUIT TO MENU")
         } else when (g.mode) {
             Mode.MENU -> {
-                drawLogo(c)
-                tp.typeface = fDisplay; tp.textSize = 40f; tp.textAlign = Paint.Align.LEFT; tp.letterSpacing = .02f
+                c.save(); c.translate(20f, 12f); c.scale(.6f, .6f); c.translate(-36f, -22f); drawLogo(c); c.restore()
+                tp.typeface = fDisplay; tp.textSize = 28f; tp.textAlign = Paint.Align.LEFT; tp.letterSpacing = .02f
                 tp.style = Paint.Style.FILL
                 tp.shader = titlePaint.shader
-                c.drawText("JETSTRIKE", 116f, 68f, tp)
+                c.drawText("JETSTRIKE", 68f, 42f, tp)
                 tp.shader = null
-                text(c, "Jetpack deathmatch. Play offline or on your Wi-Fi.", 116f, 92f, 14f, MUTED, Paint.Align.LEFT, body, .02f)
+                text(c, "Jetpack deathmatch", 68f, 58f, 11f, MUTED, Paint.Align.LEFT, body, .06f)
+                // character preview
+                rr(c, 20f, 72f, 188f, 228f, 16f, 0x33000000)
+                sp.shader = null; sp.strokeWidth = 1.2f; sp.color = 0x44FFFFFF
+                rect.set(20f, 72f, 188f, 228f)
+                c.drawRoundRect(rect, 16f, 16f, sp)
+                previewEnt.skin = SKINS[g.mySkin]
+                previewEnt.aim = sin(g.t * .9f) * .3f
+                previewEnt.alive = true; previewEnt.onG = true; previewEnt.x = 0f; previewEnt.y = 0f
+                c.save(); c.translate(108f, 204f); c.scale(1.9f, 1.9f)
+                drawSoldier(c, previewEnt, false)
+                c.restore()
+                text(c, SKINS[g.mySkin].name.uppercase(), 104f, 221f, 12f, AMBER, Paint.Align.CENTER, body, .15f)
+                rr(c, 24f, 128f, 50f, 164f, 10f, 0x33000000)
+                rr(c, 158f, 128f, 184f, 164f, 10f, 0x33000000)
+                line(c, 41f, 138f, 33f, 146f, 3f, WHITE); line(c, 33f, 146f, 41f, 154f, 3f, WHITE)
+                line(c, 167f, 138f, 175f, 146f, 3f, WHITE); line(c, 175f, 146f, 167f, 154f, 3f, WHITE)
+                rr(c, 20f, 238f, 188f, 278f, 12f, 0x40000000)
+                text(c, "YOUR NAME", 32f, 252f, 9f, MUTED, Paint.Align.LEFT, body, .2f)
+                text(c, g.myName, 32f, 270f, 15f, WHITE, Paint.Align.LEFT, body, .04f)
+                text(c, "EDIT", 176f, 270f, 11f, AMBER, Paint.Align.RIGHT, body, .12f)
+                // play options
+                text(c, "MODE", 204f, 76f, 10f, MUTED, Paint.Align.LEFT, body, .2f)
                 rulesRow(c, byId(menuBtns, "team"), byId(menuBtns, "solo"))
+                text(c, "BOT SKILL", 204f, 128f, 10f, MUTED, Paint.Align.LEFT, body, .2f)
                 diffRow(c, menuBtns)
                 btnShape(c, byId(menuBtns, "offline"), true, "PLAY OFFLINE", false)
                 smallGhost(c, byId(menuBtns, "host"), "HOST LAN")
                 smallGhost(c, byId(menuBtns, "join"), "JOIN LAN")
-                text(c, "Left stick: move, push up to fly   |   Right stick: aim and shoot   |   Drag the screen to look around",
-                    240f, 278f, 10.5f, MUTED, Paint.Align.CENTER, body, .01f)
+                smallGhost(c, byId(menuBtns, "ctl"), "CONTROLS")
+                text(c, "Left stick moves and flies  |  Right stick aims and fires  |  Drag the screen to look", 240f, 291f, 9.5f, MUTED, Paint.Align.CENTER, body, .01f)
             }
             Mode.HOST -> {
                 val n = (g.net?.activeClients()?.size ?: 0) + 1
@@ -1017,7 +1298,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             }
             drawHud(c)
         }
-        if (game.mode != Mode.PLAY || game.paused) drawOverlay(c)
+        if (editing) drawEdit(c) else if (game.mode != Mode.PLAY || game.paused) drawOverlay(c)
         drawNotice(c)
     }
 
@@ -1077,6 +1358,13 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                     }
                 }
                 "offline" -> g.startOffline()
+                "prev", "next" -> {
+                    val n = SKINS.size
+                    g.mySkin = (g.mySkin + (if (id == "next") 1 else n - 1)) % n
+                    prefs.edit().putInt("skin", g.mySkin).apply()
+                }
+                "name" -> askName()
+                "ctl" -> { editing = true; editSel = "move" }
                 "host" -> g.hostOpen()
                 "join" -> g.joinOpen()
                 "start" -> g.hostBegin()
@@ -1095,10 +1383,11 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         })
     }
 
-    private fun inStick(x: Float, y: Float, cx: Float, cy: Float): Boolean = hypot(x - cx, y - cy) <= stickR * 1.5f
+    private fun inStick(x: Float, y: Float, cx: Float, cy: Float, r: Float): Boolean = hypot(x - cx, y - cy) <= r * 1.5f
 
     private fun onDown(id: Int, x: Float, y: Float) {
         val g = game
+        if (editing) { if (editPtr == -1) { editPtr = id; editDown(x, y) }; return }
         if (g.mode == Mode.PLAY && !g.paused) {
             // on-screen buttons first
             if (pauseR.contains(x, y)) { btnPtr = id; btnKind = "pause"; return }
@@ -1108,8 +1397,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             if (slotR[0].contains(x, y)) { btnPtr = id; btnKind = "slot0"; return }
             if (slotR[1].contains(x, y)) { btnPtr = id; btnKind = "slot1"; return }
             // the sticks only respond on their own pads
-            if (lId == -1 && inStick(x, y, lcx, lcy)) { lId = id; moveStick(true, x, y); g.lOn = true; return }
-            if (rId == -1 && inStick(x, y, rcx, rcy)) { rId = id; moveStick(false, x, y); g.rOn = true; return }
+            if (lId == -1 && inStick(x, y, lcx, lcy, lR)) { lId = id; moveStick(true, x, y); g.lOn = true; return }
+            if (rId == -1 && inStick(x, y, rcx, rcy, rR)) { rId = id; moveStick(false, x, y); g.rOn = true; return }
             // anywhere else: drag to look around
             if (panId == -1) { panId = id; panLx = x; panLy = y; g.panning = true }
         } else if (uiPtr == -1) {
@@ -1121,14 +1410,16 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private fun moveStick(left: Boolean, x: Float, y: Float) {
         val cx = if (left) lcx else rcx
         val cy = if (left) lcy else rcy
-        var dx = (x - cx) / stickR
-        var dy = (y - cy) / stickR
+        val sr = if (left) lR else rR
+        var dx = (x - cx) / sr
+        var dy = (y - cy) / sr
         val m = hypot(dx, dy)
         if (m > 1f) { dx /= m; dy /= m }
         if (left) { lkx = dx; lky = dy; game.lx = dx; game.ly = dy } else { rkx = dx; rky = dy; game.rx = dx; game.ry = dy }
     }
 
     private fun onMove(id: Int, x: Float, y: Float) {
+        if (editing) { if (id == editPtr) editMove(x, y); return }
         if (id == lId) moveStick(true, x, y)
         else if (id == rId) moveStick(false, x, y)
         else if (id == panId) {
@@ -1141,6 +1432,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
     private fun onUp(id: Int, x: Float, y: Float) {
         val g = game
+        if (editing) { if (id == editPtr) { editPtr = -1; dragging = false; sliderDrag = false }; return }
         if (id == lId) {
             lId = -1; lkx = 0f; lky = 0f; g.lOn = false; g.lx = 0f; g.ly = 0f
         } else if (id == rId) {
@@ -1179,6 +1471,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private fun cancelTouches() {
         val g = game
         lId = -1; rId = -1; panId = -1; uiPtr = -1; btnPtr = -1; btnKind = ""; pressedId = null
+        editPtr = -1; dragging = false; sliderDrag = false
         lkx = 0f; lky = 0f; rkx = 0f; rky = 0f
         g.lOn = false; g.rOn = false; g.lx = 0f; g.ly = 0f; g.rx = 0f; g.ry = 0f; g.panning = false
     }

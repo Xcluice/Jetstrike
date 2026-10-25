@@ -62,6 +62,8 @@ class Conn(val sock: Socket) {
     private val q = LinkedBlockingQueue<ByteArray>(24)
     @Volatile var alive = true
     @Volatile var playerId = -1
+    @Volatile var skin = 0
+    @Volatile var name = "Player"
     val rin = RemoteIn()
 
     init {
@@ -162,6 +164,11 @@ class Net(private val ctx: Context) {
             val buf = ByteArray(len)
             c.inp.readFully(buf)
             if (buf.isEmpty() || (buf[0].toInt() and 0xFF) != MSG_HELLO) { c.close(); return }
+            try {
+                val dd = DataInputStream(buf.inputStream(1, buf.size - 1))
+                c.skin = dd.readUnsignedByte()
+                c.name = dd.readUTF().take(12)
+            } catch (e: Exception) { }
             if (started || clients.count { it.alive } + 1 >= maxPlayers()) {
                 c.send(frame(MSG_REJECT) { }, false)
                 Thread.sleep(200)
@@ -210,9 +217,10 @@ class Net(private val ctx: Context) {
         for (c in clients) c.send(f, false)
     }
 
-    fun sendStart(c: Conn, rules: Int, diff: Int, id: Int, humans: Int) {
+    fun sendStart(c: Conn, rules: Int, diff: Int, id: Int, humans: Int, skins: IntArray, names: List<String>) {
         c.send(frame(MSG_START) {
             it.writeByte(rules); it.writeByte(diff); it.writeByte(id); it.writeByte(humans)
+            for (k in 0 until humans) { it.writeByte(skins[k]); it.writeUTF(names[k]) }
         }, false)
     }
 
@@ -331,7 +339,7 @@ class Net(private val ctx: Context) {
         return l.sortedBy { it.ip }
     }
 
-    fun connect(ip: String) {
+    fun connect(ip: String, skin: Int, name: String) {
         stopListening()
         Thread({
             try {
@@ -340,7 +348,7 @@ class Net(private val ctx: Context) {
                 s.tcpNoDelay = true
                 val c = Conn(s)
                 toHost = c
-                c.send(frame(MSG_HELLO) { }, false)
+                c.send(frame(MSG_HELLO) { it.writeByte(skin); it.writeUTF(name) }, false)
                 while (c.alive) {
                     val n = c.inp.readInt()
                     if (n < 1 || n > (1 shl 20)) break

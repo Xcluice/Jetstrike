@@ -17,13 +17,13 @@ import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.random.Random
 
-const val WORLD_W = 2400f
-const val WORLD_H = 900f
-const val GROUND_Y = 850f
+const val WORLD_W = 4200f
+const val WORLD_H = 1300f
+const val GROUND_Y = 1250f
 const val GRAV = 1500f
 const val SPEED = 250f
-const val GOAL_SOLO = 12
-const val GOAL_TEAM = 20
+const val GOAL_SOLO = 15
+const val GOAL_TEAM = 25
 const val PI_F = 3.1415927f
 const val GREN_R = 150f
 
@@ -48,7 +48,7 @@ fun angDiff(a: Float, b: Float): Float {
 
 class Plat(val x: Float, val y: Float, val w: Float, val h: Float, val wall: Boolean = false)
 
-class Skin(val name: String, hex: String, hexD: String, hexL: String) {
+class Skin(val name: String, hex: String, hexD: String, hexL: String, val acc: Int = 0) {
     val c: Int = Color.parseColor(hex)
     val d: Int = Color.parseColor(hexD)
     val l: Int = Color.parseColor(hexL)
@@ -65,7 +65,8 @@ class Pick(val t: String, val x: Float, val y: Float) {
     var cd = 0f
 }
 
-class Ent(val id: Int, val skin: Skin, val team: Int) {
+class Ent(val id: Int, var skin: Skin, val team: Int) {
+    var name = ""
     var human = false
     var bot = true
     var x = 0f
@@ -120,6 +121,9 @@ class Ent(val id: Int, val skin: Skin, val team: Int) {
     var boost = 0f
     var aiMx = 0f
     var aiJet = false
+    var jetT = 0f
+    var restT = 0f
+    var seenT = 0f
     var tg: Ent? = null
     var dist = 999f
     var los = false
@@ -155,44 +159,73 @@ enum class Role { OFFLINE, HOST, CLIENT }
 
 val WEAPON_KEYS: List<String> = listOf("pistol", "rifle", "shotgun", "sniper")
 val DIFF_KEYS: List<String> = listOf("easy", "normal", "hard")
-val BOT_NAMES: List<String> = listOf("Rook", "Vex", "Blitz", "Nova", "Echo", "Flux")
+val BOT_NAMES: List<String> = listOf("Rook", "Vex", "Blitz", "Echo", "Flux", "Zane", "Mako", "Juno")
 
 fun wIdx(k: String?): Int = if (k == null) -1 else WEAPON_KEYS.indexOf(k)
 
-val PLATS: List<Plat> = listOf(
-    Plat(0f, 850f, 2400f, 600f),
-    Plat(100f, 720f, 280f, 20f), Plat(1000f, 720f, 400f, 20f), Plat(2020f, 720f, 280f, 20f),
-    Plat(520f, 580f, 260f, 20f), Plat(1620f, 580f, 260f, 20f),
-    Plat(250f, 430f, 240f, 20f), Plat(980f, 430f, 440f, 20f), Plat(1900f, 430f, 240f, 20f),
-    Plat(620f, 300f, 220f, 20f), Plat(1560f, 300f, 220f, 20f),
-    Plat(1080f, 200f, 240f, 20f),
-    Plat(700f, 760f, 24f, 90f, true), Plat(1676f, 760f, 24f, 90f, true)
+private val HALF: List<FloatArray> = listOf(
+    floatArrayOf(150f, 1110f, 280f), floatArrayOf(620f, 1110f, 320f), floatArrayOf(1350f, 1110f, 420f),
+    floatArrayOf(380f, 960f, 260f), floatArrayOf(960f, 960f, 300f), floatArrayOf(1650f, 960f, 300f),
+    floatArrayOf(120f, 810f, 260f), floatArrayOf(700f, 810f, 260f), floatArrayOf(1300f, 810f, 320f),
+    floatArrayOf(420f, 660f, 280f), floatArrayOf(1000f, 660f, 260f), floatArrayOf(1600f, 660f, 260f),
+    floatArrayOf(150f, 510f, 240f), floatArrayOf(760f, 510f, 300f), floatArrayOf(1380f, 510f, 260f),
+    floatArrayOf(480f, 360f, 260f), floatArrayOf(1080f, 360f, 280f)
 )
 
-val SPAWNS: List<FloatArray> = listOf(
-    floatArrayOf(200f, 720f), floatArrayOf(1200f, 720f), floatArrayOf(2150f, 720f),
-    floatArrayOf(650f, 580f), floatArrayOf(1750f, 580f),
-    floatArrayOf(360f, 430f), floatArrayOf(1200f, 430f), floatArrayOf(2020f, 430f),
-    floatArrayOf(730f, 300f), floatArrayOf(1670f, 300f),
-    floatArrayOf(300f, 850f), floatArrayOf(2100f, 850f), floatArrayOf(1200f, 850f),
-    floatArrayOf(1200f, 200f)
+private val CENTER: List<FloatArray> = listOf(
+    floatArrayOf(1850f, 1110f, 500f), floatArrayOf(1900f, 810f, 400f),
+    floatArrayOf(1850f, 510f, 500f), floatArrayOf(1750f, 230f, 700f)
 )
 
-val PICK_DEF: List<Triple<String, Float, Float>> = listOf(
-    Triple("sniper", 1200f, 182f), Triple("shotgun", 650f, 562f), Triple("shotgun", 1750f, 562f),
-    Triple("rifle", 230f, 702f), Triple("rifle", 2150f, 702f),
-    Triple("health", 360f, 412f), Triple("health", 2020f, 412f), Triple("health", 1200f, 702f),
-    Triple("health", 1670f, 282f), Triple("health", 730f, 282f),
-    Triple("gren", 560f, 562f), Triple("gren", 1660f, 562f), Triple("gren", 1200f, 412f)
-)
+val PLATS: List<Plat> = buildList {
+    add(Plat(0f, GROUND_Y, WORLD_W, 600f))
+    for (h in HALF) {
+        add(Plat(h[0], h[1], h[2], 20f))
+        add(Plat(WORLD_W - h[0] - h[2], h[1], h[2], 20f))
+    }
+    for (h in CENTER) add(Plat(h[0], h[1], h[2], 20f))
+    add(Plat(1000f, GROUND_Y - 90f, 24f, 90f, true))
+    add(Plat(WORLD_W - 1024f, GROUND_Y - 90f, 24f, 90f, true))
+    add(Plat(2088f, GROUND_Y - 120f, 24f, 120f, true))
+}
+
+val SPAWNS: List<FloatArray> = buildList {
+    for (i in 1 until PLATS.size) {
+        val pl = PLATS[i]
+        if (!pl.wall) add(floatArrayOf(pl.x + pl.w / 2f, pl.y))
+    }
+    for (x in listOf(300f, 900f, 1500f, 2700f, 3300f, 3900f)) add(floatArrayOf(x, GROUND_Y))
+}
+
+val PICK_DEF: List<Triple<String, Float, Float>> = buildList {
+    val guns = listOf("rifle", "shotgun", "rifle", "sniper")
+    var gi = 0
+    for (i in 1 until PLATS.size) {
+        val pl = PLATS[i]
+        if (pl.wall || pl.y <= 230f) continue
+        val cx = pl.x + pl.w / 2f
+        when (i % 4) {
+            0 -> add(Triple("health", cx, pl.y - 18f))
+            1 -> add(Triple("gren", cx, pl.y - 18f))
+            2 -> { add(Triple(guns[gi % guns.size], cx, pl.y - 18f)); gi++ }
+        }
+    }
+    add(Triple("sniper", 2100f, 230f - 18f))
+    add(Triple("health", 2100f, GROUND_Y - 18f))
+    add(Triple("rifle", 600f, GROUND_Y - 18f)); add(Triple("rifle", 3600f, GROUND_Y - 18f))
+    add(Triple("shotgun", 1500f, GROUND_Y - 18f)); add(Triple("shotgun", 2700f, GROUND_Y - 18f))
+    add(Triple("gren", 1100f, GROUND_Y - 18f)); add(Triple("gren", 3100f, GROUND_Y - 18f))
+}
 
 val SKINS: List<Skin> = listOf(
-    Skin("You", "#19e3c8", "#0b8f86", "#a6fff1"),
-    Skin("Sky", "#4aa8ff", "#1b5fae", "#bfe0ff"),
-    Skin("Lime", "#5ee06b", "#238a30", "#ccffd0"),
-    Skin("Rook", "#ff8a3d", "#b34a12", "#ffd3ae"),
-    Skin("Nova", "#ff4f6d", "#a3173a", "#ffc3ce"),
-    Skin("Vex", "#ffd23f", "#a67c00", "#fff2ae")
+    Skin("Nova", "#19e3c8", "#0b8f86", "#a6fff1", 0),
+    Skin("Blaze", "#ff8a3d", "#b34a12", "#ffd3ae", 1),
+    Skin("Frost", "#7cc8ff", "#2a6fae", "#dff2ff", 2),
+    Skin("Viper", "#7ee05c", "#2f8a22", "#d6ffc2", 3),
+    Skin("Sol", "#ffd23f", "#a67c00", "#fff2ae", 4),
+    Skin("Bloom", "#ff6b9a", "#a3305a", "#ffc7da", 5),
+    Skin("Onyx", "#6f8296", "#2f3d4b", "#c4d3e0", 6),
+    Skin("Rust", "#c97b4a", "#6a3a1a", "#f0c9a6", 7)
 )
 
 val WEAPONS: Map<String, Weapon> = mapOf(
@@ -203,13 +236,15 @@ val WEAPONS: Map<String, Weapon> = mapOf(
 )
 
 val DIFFS: Map<String, Diff> = mapOf(
-    "easy" to Diff(.24f, 6f),
-    "normal" to Diff(.11f, 10f),
-    "hard" to Diff(.045f, 16f)
+    "easy" to Diff(.32f, 3.5f),
+    "normal" to Diff(.17f, 6.5f),
+    "hard" to Diff(.08f, 11f)
 )
 
 class Game {
     var role = Role.OFFLINE
+    var mySkin = 0
+    var myName = "Player"
     var rules = Rules.SOLO
     var menuRules = Rules.TEAM
     var mode = Mode.MENU
@@ -275,10 +310,7 @@ class Game {
 
     fun diffIndex(): Int = max(0, DIFF_KEYS.indexOf(diff))
 
-    fun nameOf(id: Int): String {
-        if (id < humans) return if (id == localId) "You" else "P${id + 1}"
-        return BOT_NAMES[id % BOT_NAMES.size]
-    }
+    fun nameOf(id: Int): String = ents.getOrNull(id)?.name ?: "?"
 
     fun teamKills(team: Int): Int {
         var s = 0
@@ -294,17 +326,32 @@ class Game {
     }
 
     /* ---------- setup ---------- */
-    private fun buildEnts(r: Rules, humanCount: Int, local: Int) {
+    private fun buildEnts(r: Rules, humanCount: Int, local: Int, pSkins: IntArray? = null, pNames: List<String>? = null) {
         rules = r
         humans = humanCount
         localId = local
         ents.clear(); bullets.clear(); grenades.clear(); parts.clear(); texts.clear(); picks.clear(); feed.clear()
         outEvents.clear()
-        val n = if (r == Rules.TEAM) 6 else max(5, humanCount)
+        val n = if (r == Rules.TEAM) 8 else max(7, humanCount)
+        val used = HashSet<Int>()
+        for (i in 0 until humanCount) used.add((pSkins?.getOrNull(i) ?: mySkin).coerceIn(0, SKINS.size - 1))
+        var bs = 0
         for (i in 0 until n) {
-            val e = Ent(i, SKINS[i % SKINS.size], if (r == Rules.TEAM) i / 3 else i)
-            e.human = i < humanCount
-            e.bot = !e.human
+            val human = i < humanCount
+            val si: Int
+            if (human) {
+                si = (pSkins?.getOrNull(i) ?: mySkin).coerceIn(0, SKINS.size - 1)
+            } else {
+                var v = bs % SKINS.size
+                var guard = 0
+                while (used.contains(v) && guard < SKINS.size) { bs++; v = bs % SKINS.size; guard++ }
+                used.add(v); bs++
+                si = v
+            }
+            val e = Ent(i, SKINS[si], if (r == Rules.TEAM) i / 4 else i)
+            e.human = human
+            e.bot = !human
+            e.name = if (human) (pNames?.getOrNull(i) ?: (if (i == local) myName else "P${i + 1}")) else BOT_NAMES[i % BOT_NAMES.size]
             ents.add(e)
         }
         player = ents[min(local, ents.size - 1)]
@@ -327,7 +374,7 @@ class Game {
     fun startOffline() {
         net?.shutdown()
         role = Role.OFFLINE
-        buildEnts(menuRules, 1, 0)
+        buildEnts(menuRules, 1, 0, intArrayOf(mySkin), listOf(myName))
         mode = Mode.PLAY
         paused = false
         updateCam(0f, true)
@@ -364,11 +411,14 @@ class Game {
         val hc = 1 + cl.size
         role = Role.HOST
         for (i in remotes.indices) remotes[i] = null
-        buildEnts(menuRules, hc, 0)
+        val skins = IntArray(hc)
+        val names = ArrayList<String>()
+        skins[0] = mySkin; names.add(myName)
+        for ((i, c) in cl.withIndex()) { c.playerId = i + 1; skins[i + 1] = c.skin; names.add(c.name) }
+        buildEnts(menuRules, hc, 0, skins, names)
         for ((i, c) in cl.withIndex()) {
-            c.playerId = i + 1
             remotes[i + 1] = c.rin
-            n.sendStart(c, menuRules.ordinal, diffIndex(), c.playerId, hc)
+            n.sendStart(c, menuRules.ordinal, diffIndex(), c.playerId, hc, skins, names)
         }
         n.started = true
         mode = Mode.PLAY
@@ -386,7 +436,7 @@ class Game {
 
     fun joinConnect(ip: String) {
         val n = net ?: return
-        n.connect(ip)
+        n.connect(ip, mySkin, myName)
         mode = Mode.WAIT
         lobbyHumans = 0
     }
@@ -708,7 +758,7 @@ class Game {
         val w = WEAPONS.getValue(e.wp)
         if (e.reload > 0f || e.cool > 0f) return
         if (e.ammo <= 0) { startReload(e); return }
-        e.cool = w.rate; e.ammo--
+        e.cool = w.rate * (if (e.bot) 1.4f else 1f); e.ammo--
         val sx = e.x
         val sy = e.y - 28f
         val mxp = sx + cos(e.aim) * (w.len + 8f)
@@ -863,7 +913,7 @@ class Game {
                 val gx = g.x - e.x
                 val gy = g.y - e.y
                 mx = if (abs(gx) > 14f) sign(gx) else 0f
-                jet = gy < -50f || (gy < -20f && abs(gx) < 40f)
+                jet = gy < -70f || (gy < -30f && abs(gx) < 40f)
             } else if (tg != null) {
                 val dx = tg.x - e.x
                 val dy = tg.y - e.y
@@ -874,9 +924,10 @@ class Game {
                     if (Random.nextFloat() < .25f) e.strafe *= -1f
                     mx = e.strafe * .7f
                 }
-                jet = dy < -60f
+                jet = dy < -110f
             }
-            if (Random.nextFloat() < .07f) e.boost = .25f + Random.nextFloat() * .3f
+            if (Random.nextFloat() < .02f && e.fuel > 55f) e.boost = .2f + Random.nextFloat() * .2f
+            if (e.fuel < 30f) jet = false
             e.aiMx = mx; e.aiJet = jet
         }
         if (e.onG && abs(e.vx) < 25f && abs(e.aiMx) > .3f) e.stuck += dt else e.stuck = 0f
@@ -885,6 +936,13 @@ class Game {
         if (e.bump > .35f) { e.force = .5f; e.strafe = if (Random.nextBoolean()) 1f else -1f; e.bump = 0f }
         e.mx = if (e.force > 0f) e.strafe else e.aiMx
         e.jet = (e.aiJet || e.boost > 0f) && !e.empty
+        // bots fly in short bursts with a rest in between, so they can't hover over you forever
+        if (e.jet) {
+            e.jetT += dt
+            if (e.jetT > .8f) { e.restT = when (diff) { "easy" -> 1.4f; "hard" -> .55f; else -> .9f }; e.jetT = 0f }
+        } else e.jetT = 0f
+        if (e.restT > 0f) { e.restT -= dt; e.jet = false }
+        if (e.tg != null && e.los) e.seenT += dt else e.seenT = 0f
         var des = e.aim
         val tg2 = e.tg
         if (tg2 != null && tg2.alive && e.los) {
@@ -896,7 +954,8 @@ class Game {
         }
         e.aim += angDiff(e.aim, des) * min(1f, dd.speed * dt)
         e.fire = tg2 != null && tg2.alive && e.los &&
-            e.dist < (if (e.wp == "sniper") 950f else 620f) && abs(angDiff(e.aim, des)) < .22f
+            e.dist < (if (e.wp == "sniper") 800f else 520f) && abs(angDiff(e.aim, des)) < .2f &&
+            e.seenT > (when (diff) { "easy" -> .75f; "hard" -> .3f; else -> .5f })
     }
 
     private fun stepEnt(e: Ent, dt: Float) {
@@ -1213,7 +1272,10 @@ class Game {
                         val id = d.readUnsignedByte()
                         val hc = d.readUnsignedByte()
                         role = Role.CLIENT
-                        buildEnts(if (r == 0) Rules.TEAM else Rules.SOLO, hc, id)
+                        val sk = IntArray(hc)
+                        val nm = ArrayList<String>()
+                        for (k in 0 until hc) { sk[k] = d.readUnsignedByte(); nm.add(d.readUTF()) }
+                        buildEnts(if (r == 0) Rules.TEAM else Rules.SOLO, hc, id, sk, nm)
                         mode = Mode.PLAY
                         paused = false
                         reqG = 0; reqS = 0; reqSV = 0; reqR = 0
