@@ -30,7 +30,16 @@ jobs:
         run: base64 -d signing/release.keystore.b64 > app/release.keystore
 
       - name: Build release APK
-        run: gradle assembleRelease --no-daemon --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --console=plain 2>&1 | tee build.log
+
+      - name: Report compile errors
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "^e: |error:|What went wrong" -A1 build.log | head -60 | sed 's#file:///home/runner/work/Jetstrike/Jetstrike/##' | while IFS= read -r l; do echo "::error::$l"; done
 
       - name: Name the APK
         run: cp app/build/outputs/apk/release/app-release.apk Jetstrike.apk
