@@ -111,6 +111,10 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private val slotR = arrayOf(RectF(), RectF())
     private val bGren = RectF()
     private val bScope = RectF()
+    private val bPick = RectF()
+    private val pickR = RectF()
+    private var pickCx = 0f
+    private var pickCy = 0f
     private val scopeR = RectF()
     private var scopeCx = 0f
     private var scopeCy = 0f
@@ -131,8 +135,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     // customisable control layout (position as screen fractions, plus a size multiplier)
     private class Ctl(var fx: Float, var fy: Float, var s: Float)
     private val ctl = HashMap<String, Ctl>()
-    private val CTL_KEYS = listOf("move", "aim", "gren", "scope", "weap")
-    private val CTL_NAMES = mapOf("move" to "MOVE STICK", "aim" to "AIM / FIRE STICK", "gren" to "GRENADE BUTTON", "scope" to "SCOPE BUTTON", "weap" to "WEAPON BAR")
+    private val CTL_KEYS = listOf("move", "aim", "gren", "scope", "pick", "weap")
+    private val CTL_NAMES = mapOf("move" to "MOVE STICK", "aim" to "AIM / FIRE STICK", "gren" to "GRENADE BUTTON", "scope" to "RANGE BUTTON", "pick" to "PICK BUTTON", "weap" to "WEAPON BAR")
     private val CTL_MIN = .6f
     private val CTL_MAX = 1.6f
     private var ctlLoaded = false
@@ -733,6 +737,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             "aim" -> Ctl((W - edge - insetR) / W, (H - dp(88f)) / H, 1f)
             "gren" -> Ctl((W - edge - insetR) / W, (H - dp(88f) - dp(112f)) / H, 1f)
             "scope" -> Ctl((W - edge - insetR - dp(88f)) / W, (H - dp(88f) - dp(34f)) / H, 1f)
+            "pick" -> Ctl((W - edge - insetR - dp(100f)) / W, (H - dp(88f) - dp(112f)) / H, 1f)
             else -> Ctl(.5f, (H - dp(12f) - dp(26f)) / H, 1f)
         }
     }
@@ -788,6 +793,10 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         scopeCx = sc.fx * W; scopeCy = sc.fy * H
         bScope.set(scopeCx - gs, scopeCy - gs, scopeCx + gs, scopeCy + gs)
         scaleRect(bScope, scopeCx, scopeCy, sc.s, scopeR)
+        val pk = ctl.getValue("pick")
+        pickCx = pk.fx * W; pickCy = pk.fy * H
+        bPick.set(pickCx - gs, pickCy - gs, pickCx + gs, pickCy + gs)
+        scaleRect(bPick, pickCx, pickCy, pk.s, pickR)
         // weapon bar: two slots and a reload button
         val w = ctl.getValue("weap")
         barCx = w.fx * W; barCy = w.fy * H
@@ -899,7 +908,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         }
     }
 
-    private fun zoomLabel(z: Float): String = (if (z % 1f == 0f) z.toInt().toString() else String.format("%.1f", z)) + "x"
+    /** The scope button now sets view range: lower zoom = more of the map on screen. */
+    private fun zoomLabel(z: Float): String = String.format("%.1f", 4f / z) + "x"
 
     private fun drawScopeButton(c: Canvas) {
         val z = game.zoomLevel()
@@ -931,17 +941,13 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         val big = min(W, H)
         when (w.reticle) {
             4 -> {
-                val r = big * .40f
-                scopePath.reset(); scopePath.fillType = Path.FillType.INVERSE_EVEN_ODD
-                scopePath.addCircle(sx, sy, r, Path.Direction.CW)
-                p.shader = null; p.style = Paint.Style.FILL; p.color = 0xE6040C12.toInt()
-                c.drawPath(scopePath, p)
+                val r = dp(64f)
                 sp.shader = null; sp.strokeWidth = dp(2f); sp.color = 0xCCFFFFFF.toInt()
                 c.drawCircle(sx, sy, r, sp)
                 sp.strokeWidth = dp(1f); sp.color = 0x99FFFFFF.toInt()
                 c.drawLine(sx - r, sy, sx - dp(10f), sy, sp); c.drawLine(sx + dp(10f), sy, sx + r, sy, sp)
                 c.drawLine(sx, sy - r, sx, sy - dp(10f), sp); c.drawLine(sx, sy + dp(10f), sx, sy + r, sp)
-                for (i in 1..4) {
+                for (i in 1..2) {
                     val o = dp(26f) * i
                     c.drawLine(sx + o, sy - dp(4f), sx + o, sy + dp(4f), sp); c.drawLine(sx - o, sy - dp(4f), sx - o, sy + dp(4f), sp)
                     c.drawLine(sx - dp(4f), sy + o, sx + dp(4f), sy + o, sp)
@@ -949,10 +955,6 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 circle(c, sx, sy, dp(2f), RED)
             }
             1 -> {
-                scopePath.reset(); scopePath.fillType = Path.FillType.INVERSE_EVEN_ODD
-                scopePath.addCircle(sx, sy, big * .55f, Path.Direction.CW)
-                p.shader = null; p.style = Paint.Style.FILL; p.color = 0x66040C12
-                c.drawPath(scopePath, p)
                 sp.shader = null; sp.strokeWidth = dp(1.8f); sp.color = 0xCCFF5A5A.toInt()
                 c.drawCircle(sx, sy, dp(30f), sp)
                 circle(c, sx, sy, dp(3f), 0xFFFF5A5A.toInt())
@@ -998,6 +1000,23 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         val by = bGren.top + dp(8f)
         circle(c, bx, by, dp(9f), if (ready) AMBER else 0x66FFB347)
         text(c, pl.grenades.toString(), bx, by + dp(4.5f), dp(12f), 0xFF04141C.toInt(), Paint.Align.CENTER, fDisplay)
+    }
+
+    private fun drawPickButton(c: Canvas, pl: Ent) {
+        val pk = if (pl.alive) game.gunNear(pl) else null
+        val near = pk != null
+        roundBtn(c, bPick, near)
+        val cx = bPick.centerX()
+        val cy = bPick.centerY() - dp(5f)
+        val a = if (near) 0xFF else 0x77
+        val col = (a shl 24) or 0xFFFFFF
+        rr(c, cx - dp(14f), cy - dp(6f), cx + dp(12f), cy + dp(1f), dp(2f), col)
+        rr(c, cx - dp(14f), cy - dp(9f), cx - dp(4f), cy - dp(5f), dp(1.5f), col)
+        rr(c, cx - dp(9f), cy + dp(1f), cx - dp(3f), cy + dp(10f), dp(1.5f), col)
+        text(c, "PICK", cx, bPick.centerY() + dp(19f), dp(11f), if (near) AMBER else WHITE, Paint.Align.CENTER, fDisplay)
+        if (pk != null) {
+            text(c, WEAPONS.getValue(pk.t).n.uppercase(), cx, bPick.top - dp(6f), dp(10f), AMBER, Paint.Align.CENTER, fDisplay, .06f)
+        }
     }
 
     private fun drawScoreboard(c: Canvas, top: Float) {
@@ -1121,6 +1140,10 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         c.save(); c.translate(scopeCx, scopeCy); c.scale(sc.s, sc.s); c.translate(-scopeCx, -scopeCy)
         drawScopeButton(c)
         c.restore()
+        val pkc = ctl.getValue("pick")
+        c.save(); c.translate(pickCx, pickCy); c.scale(pkc.s, pkc.s); c.translate(-pickCx, -pickCy)
+        drawPickButton(c, pl)
+        c.restore()
         val w = ctl.getValue("weap")
         c.save(); c.translate(barCx, barCy); c.scale(w.s, w.s); c.translate(-barCx, -barCy)
         drawWeaponBar(c, pl)
@@ -1134,6 +1157,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             "aim" -> out.set(rcx - rR, rcy - rR, rcx + rR, rcy + rR)
             "gren" -> out.set(grenR)
             "scope" -> out.set(scopeR)
+            "pick" -> out.set(pickR)
             else -> out.set(slotR[0].left, min(slotR[0].top, reloadR.top), reloadR.right, max(slotR[1].bottom, reloadR.bottom))
         }
     }
@@ -1184,7 +1208,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         if (x >= sliderR.left - dp(14f) && x <= sliderR.right + dp(14f) && abs(y - sliderR.centerY()) <= dp(18f)) {
             sliderDrag = true; setSize(x); return
         }
-        for (k in listOf("weap", "gren", "scope", "aim", "move")) {
+        for (k in listOf("weap", "pick", "gren", "scope", "aim", "move")) {
             ctlBounds(k, tmpR)
             if (tmpR.contains(x, y)) {
                 editSel = k
@@ -1550,6 +1574,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             if (grenR.contains(x, y)) { btnPtr = id; btnKind = "gren"; return }
             if (reloadR.contains(x, y)) { btnPtr = id; btnKind = "reload"; return }
             if (scopeR.contains(x, y)) { btnPtr = id; btnKind = "scope"; return }
+            if (pickR.contains(x, y)) { btnPtr = id; btnKind = "pick"; return }
             if (slotR[0].contains(x, y)) { btnPtr = id; btnKind = "slot0"; return }
             if (slotR[1].contains(x, y)) { btnPtr = id; btnKind = "slot1"; return }
             // the sticks only respond on their own pads
@@ -1604,6 +1629,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 "gren" -> grenR.contains(x, y)
                 "reload" -> reloadR.contains(x, y)
                 "scope" -> scopeR.contains(x, y)
+                "pick" -> pickR.contains(x, y)
                 "slot0" -> slotR[0].contains(x, y)
                 "slot1" -> slotR[1].contains(x, y)
                 else -> false
@@ -1614,6 +1640,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 "gren" -> actions.add(Runnable { g.reqG++ })
                 "reload" -> actions.add(Runnable { g.reqR++ })
                 "scope" -> actions.add(Runnable { g.scopeStep() })
+                "pick" -> actions.add(Runnable { g.reqP++ })
                 "slot0" -> actions.add(Runnable { g.reqSV = 0; g.reqS++ })
                 "slot1" -> actions.add(Runnable { g.reqSV = 1; g.reqS++ })
             }

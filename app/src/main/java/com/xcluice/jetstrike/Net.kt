@@ -51,6 +51,7 @@ class RemoteIn {
     @Volatile var sCnt = 0
     @Volatile var sVal = 0
     @Volatile var rCnt = 0
+    @Volatile var pCnt = 0
 }
 
 class Msg(val type: Int, val data: ByteArray)
@@ -209,6 +210,7 @@ class Net(private val ctx: Context) {
         r.sCnt = d.readInt()
         r.sVal = d.readUnsignedByte()
         r.rCnt = d.readInt()
+        r.pCnt = try { d.readInt() } catch (e: Exception) { r.pCnt }
     }
 
     fun broadcastLobby() {

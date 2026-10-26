@@ -107,6 +107,7 @@ class Ent(val id: Int, var skin: Skin, val team: Int) {
     var gDone = 0
     var sDone = 0
     var rDone = 0
+    var pDone = 0
     // network interpolation targets
     var tx = 0f
     var ty = 0f
@@ -230,14 +231,14 @@ val SKINS: List<Skin> = listOf(
 )
 
 val WEAPONS: Map<String, Weapon> = mapOf(
-    "pistol" to Weapon("pistol", "Pistol", .26f, 16f, 1000f, .025f, 12, 1.0f, 1, .75f, 15f, 30f, .02f, floatArrayOf(4f, 5f), 0, 0),
-    "smg" to Weapon("smg", "SMG", .06f, 6f, 1100f, .09f, 40, 1.4f, 1, .7f, 17f, 10f, .02f, floatArrayOf(4f, 5f), 0, 0),
-    "rifle" to Weapon("rifle", "Assault Rifle", .095f, 9f, 1150f, .05f, 30, 1.5f, 1, .8f, 26f, 22f, .025f, floatArrayOf(4f, 6f), 1, 0),
-    "shotgun" to Weapon("shotgun", "Shotgun", .75f, 9f, 900f, .2f, 6, 1.7f, 7, .34f, 23f, 170f, .02f, floatArrayOf(4f, 2f), 2, 0),
-    "rocket" to Weapon("rocket", "Rocket Launcher", 1.2f, 0f, 650f, .01f, 3, 2.4f, 1, 2.0f, 30f, 160f, .03f, floatArrayOf(4f, 3f), 3, 1),
-    "flame" to Weapon("flame", "Flamethrower", .06f, 5f, 520f, .22f, 100, 2.2f, 1, .38f, 20f, 6f, .01f, floatArrayOf(4f, 3f), 0, 2),
-    "laser" to Weapon("laser", "Laser Rifle", .42f, 24f, 3200f, 0f, 12, 1.8f, 1, .5f, 28f, 40f, .03f, floatArrayOf(4f, 6f), 1, 3),
-    "sniper" to Weapon("sniper", "Sniper", 1.05f, 62f, 2100f, .004f, 5, 2.0f, 1, .9f, 34f, 140f, .05f, floatArrayOf(4f, 7f, 6f, 5f), 4, 0)
+    "pistol" to Weapon("pistol", "Pistol", .26f, 16f, 1000f, .025f, 12, 1.0f, 1, .75f, 15f, 30f, .02f, floatArrayOf(4f, 3.2f), 0, 0),
+    "smg" to Weapon("smg", "SMG", .06f, 6f, 1100f, .09f, 40, 1.4f, 1, .7f, 17f, 10f, .02f, floatArrayOf(4f, 3.2f), 0, 0),
+    "rifle" to Weapon("rifle", "Assault Rifle", .095f, 9f, 1150f, .05f, 30, 1.5f, 1, .8f, 26f, 22f, .025f, floatArrayOf(4f, 3.3f, 2.7f), 1, 0),
+    "shotgun" to Weapon("shotgun", "Shotgun", .75f, 9f, 900f, .2f, 6, 1.7f, 7, .34f, 23f, 170f, .02f, floatArrayOf(4f, 3.3f), 2, 0),
+    "rocket" to Weapon("rocket", "Rocket Launcher", 1.2f, 0f, 650f, .01f, 3, 2.4f, 1, 2.0f, 30f, 160f, .03f, floatArrayOf(4f, 3.3f, 2.7f), 3, 1),
+    "flame" to Weapon("flame", "Flamethrower", .06f, 5f, 520f, .22f, 100, 2.2f, 1, .38f, 20f, 6f, .01f, floatArrayOf(4f, 3.3f), 0, 2),
+    "laser" to Weapon("laser", "Laser Rifle", .42f, 24f, 3200f, 0f, 12, 1.8f, 1, .5f, 28f, 40f, .03f, floatArrayOf(4f, 3.3f, 2.7f), 1, 3),
+    "sniper" to Weapon("sniper", "Sniper", 1.05f, 62f, 2100f, .004f, 5, 2.0f, 1, .9f, 34f, 140f, .05f, floatArrayOf(4f, 3.4f, 2.8f, 2.2f), 4, 0)
 )
 
 val DIFFS: Map<String, Diff> = mapOf(
@@ -296,6 +297,7 @@ class Game {
     var reqS = 0
     var reqSV = 0
     var reqR = 0
+    var reqP = 0
 
     // online
     val remotes = arrayOfNulls<RemoteIn>(8)
@@ -515,7 +517,7 @@ class Game {
         if (playing) {
             matchTime += dt
             playerInput()
-            if (!paused) consumeReqs(player, reqG, reqS, reqSV, reqR)
+            if (!paused) consumeReqs(player, reqG, reqS, reqSV, reqR, reqP)
             if (role == Role.HOST) {
                 for (e in ents) if (e.human && e.id != localId) pullRemote(e)
             }
@@ -559,13 +561,14 @@ class Game {
         val r = remotes[e.id]
         if (r == null || !e.alive) { e.mx = 0f; e.jet = false; e.fire = false; return }
         e.mx = r.mx.coerceIn(-1f, 1f); e.jet = r.jet; e.fire = r.fire; e.aim = r.aim
-        consumeReqs(e, r.gCnt, r.sCnt, r.sVal, r.rCnt)
+        consumeReqs(e, r.gCnt, r.sCnt, r.sVal, r.rCnt, r.pCnt)
     }
 
-    private fun consumeReqs(e: Ent, g: Int, s: Int, sv: Int, r: Int) {
+    private fun consumeReqs(e: Ent, g: Int, s: Int, sv: Int, r: Int, pk: Int) {
         if (g != e.gDone) { e.gDone = g; throwGrenade(e) }
         if (s != e.sDone) { e.sDone = s; switchTo(e, sv) }
         if (r != e.rDone) { e.rDone = r; startReload(e) }
+        if (pk != e.pDone) { e.pDone = pk; tryPickup(e) }
     }
 
     private fun switchTo(e: Ent, slot: Int) {
@@ -892,6 +895,28 @@ class Game {
         paused = false
     }
 
+    /** The gun pickup the entity is standing on, if any (guns are taken with the PICK button). */
+    fun gunNear(e: Ent): Pick? {
+        var best: Pick? = null
+        var bd = 1e9f
+        for (p in picks) {
+            if (p.cd > 0f || p.t == "health" || p.t == "gren") continue
+            if (abs(e.x - p.x) < 34f && p.y > e.y - 56f && p.y < e.y + 14f) {
+                val d = abs(e.x - p.x)
+                if (d < bd) { bd = d; best = p }
+            }
+        }
+        return best
+    }
+
+    private fun tryPickup(e: Ent) {
+        if (!e.alive) return
+        val p = gunNear(e) ?: return
+        givePrimary(e, p.t)
+        p.cd = 14f
+        emit(EV_PICK, p.x, p.y, 0f, 0f)
+    }
+
     private fun givePrimary(e: Ent, key: String) {
         val mag = WEAPONS.getValue(key).mag
         for (i in 0..1) {
@@ -1018,8 +1043,10 @@ class Game {
                     }
                 } else if (p.t == "gren") {
                     if (!e.human || e.grenades >= 5) took = false else e.grenades = min(5, e.grenades + 2)
-                } else {
+                } else if (e.bot) {
                     givePrimary(e, p.t)
+                } else {
+                    took = false
                 }
                 if (took) {
                     p.cd = 14f
@@ -1276,7 +1303,7 @@ class Game {
             it.writeFloat(p.mx)
             it.writeByte((if (p.jet) 1 else 0) or (if (p.fire) 2 else 0))
             it.writeFloat(p.aim)
-            it.writeInt(reqG); it.writeInt(reqS); it.writeByte(reqSV); it.writeInt(reqR)
+            it.writeInt(reqG); it.writeInt(reqS); it.writeByte(reqSV); it.writeInt(reqR); it.writeInt(reqP)
         }
         net?.sendToHost(f)
     }
@@ -1313,7 +1340,7 @@ class Game {
                         buildEnts(if (r == 0) Rules.TEAM else Rules.SOLO, hc, id, sk, nm)
                         mode = Mode.PLAY
                         paused = false
-                        reqG = 0; reqS = 0; reqSV = 0; reqR = 0
+                        reqG = 0; reqS = 0; reqSV = 0; reqR = 0; reqP = 0
                         updateCam(0f, true)
                     }
                     MSG_SNAP -> if (role == Role.CLIENT) applySnapshot(m.data)
