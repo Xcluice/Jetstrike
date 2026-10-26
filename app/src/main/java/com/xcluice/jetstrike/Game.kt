@@ -231,14 +231,14 @@ val SKINS: List<Skin> = listOf(
 )
 
 val WEAPONS: Map<String, Weapon> = mapOf(
-    "pistol" to Weapon("pistol", "Pistol", .26f, 16f, 1000f, .025f, 12, 1.0f, 1, .75f, 15f, 30f, .02f, floatArrayOf(4f, 3.2f), 0, 0),
-    "smg" to Weapon("smg", "SMG", .06f, 6f, 1100f, .09f, 40, 1.4f, 1, .7f, 17f, 10f, .02f, floatArrayOf(4f, 3.2f), 0, 0),
-    "rifle" to Weapon("rifle", "Assault Rifle", .095f, 9f, 1150f, .05f, 30, 1.5f, 1, .8f, 26f, 22f, .025f, floatArrayOf(4f, 3.3f, 2.7f), 1, 0),
-    "shotgun" to Weapon("shotgun", "Shotgun", .75f, 9f, 900f, .2f, 6, 1.7f, 7, .34f, 23f, 170f, .02f, floatArrayOf(4f, 3.3f), 2, 0),
-    "rocket" to Weapon("rocket", "Rocket Launcher", 1.2f, 0f, 650f, .01f, 3, 2.4f, 1, 2.0f, 30f, 160f, .03f, floatArrayOf(4f, 3.3f, 2.7f), 3, 1),
-    "flame" to Weapon("flame", "Flamethrower", .06f, 5f, 520f, .22f, 100, 2.2f, 1, .38f, 20f, 6f, .01f, floatArrayOf(4f, 3.3f), 0, 2),
-    "laser" to Weapon("laser", "Laser Rifle", .42f, 24f, 3200f, 0f, 12, 1.8f, 1, .5f, 28f, 40f, .03f, floatArrayOf(4f, 3.3f, 2.7f), 1, 3),
-    "sniper" to Weapon("sniper", "Sniper", 1.05f, 62f, 2100f, .004f, 5, 2.0f, 1, .9f, 34f, 140f, .05f, floatArrayOf(4f, 3.4f, 2.8f, 2.2f), 4, 0)
+    "pistol" to Weapon("pistol", "Pistol", .26f, 16f, 1000f, .025f, 12, 1.0f, 1, .75f, 23f, 30f, .02f, floatArrayOf(4f, 3.2f), 0, 0),
+    "smg" to Weapon("smg", "SMG", .06f, 6f, 1100f, .09f, 40, 1.4f, 1, .7f, 25f, 10f, .02f, floatArrayOf(4f, 3.2f), 0, 0),
+    "rifle" to Weapon("rifle", "Assault Rifle", .095f, 9f, 1150f, .05f, 30, 1.5f, 1, .8f, 33f, 22f, .025f, floatArrayOf(4f, 3.3f, 2.7f), 1, 0),
+    "shotgun" to Weapon("shotgun", "Shotgun", .75f, 9f, 900f, .2f, 6, 1.7f, 7, .34f, 35f, 170f, .02f, floatArrayOf(4f, 3.3f), 2, 0),
+    "rocket" to Weapon("rocket", "Rocket Launcher", 1.2f, 0f, 650f, .01f, 3, 2.4f, 1, 2.0f, 32f, 160f, .03f, floatArrayOf(4f, 3.3f, 2.7f), 3, 1),
+    "flame" to Weapon("flame", "Flamethrower", .06f, 5f, 520f, .22f, 100, 2.2f, 1, .38f, 31f, 6f, .01f, floatArrayOf(4f, 3.3f), 0, 2),
+    "laser" to Weapon("laser", "Laser Rifle", .42f, 24f, 3200f, 0f, 12, 1.8f, 1, .5f, 32f, 40f, .03f, floatArrayOf(4f, 3.3f, 2.7f), 1, 3),
+    "sniper" to Weapon("sniper", "Sniper", 1.05f, 62f, 2100f, .004f, 5, 2.0f, 1, .9f, 45f, 140f, .05f, floatArrayOf(4f, 3.4f, 2.8f, 2.2f), 4, 0)
 )
 
 val DIFFS: Map<String, Diff> = mapOf(

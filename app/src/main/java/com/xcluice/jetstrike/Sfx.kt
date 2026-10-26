@@ -12,7 +12,7 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.random.Random
 
-/** Small synthesized sound effects, generated once at startup so the APK needs no audio assets. */
+/** Sound effects: real gunshots from res/raw (CC0 Free Firearms SFX Library), the rest synthesized at startup. */
 class Sfx(ctx: Context) {
     private val rate = 22050
     private val pool: SoundPool
@@ -24,18 +24,18 @@ class Sfx(ctx: Context) {
             .setUsage(AudioAttributes.USAGE_GAME)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
-        pool = SoundPool.Builder().setMaxStreams(10).setAudioAttributes(attrs).build()
+        pool = SoundPool.Builder().setMaxStreams(16).setAudioAttributes(attrs).build()
         try {
-            add(ctx, "pistol", gen(.12f, .8f, 2600f, .35f, 260f, .4f, true))
-            add(ctx, "rifle", gen(.09f, .8f, 3000f, .3f, 200f, .5f, true))
-            add(ctx, "shotgun", gen(.3f, 1f, 1500f, .5f, 110f, .4f, false))
-            add(ctx, "sniper", gen(.4f, 1f, 5000f, .4f, 420f, .2f, false))
+            addRaw(ctx, "pistol", R.raw.gun_pistol)
+            addRaw(ctx, "rifle", R.raw.gun_rifle)
+            addRaw(ctx, "shotgun", R.raw.gun_shotgun)
+            addRaw(ctx, "sniper", R.raw.gun_sniper)
             add(ctx, "hit", gen(.07f, .1f, 2000f, .8f, 520f, .5f, false))
             add(ctx, "die", gen(.45f, 1f, 900f, .4f, 180f, .3f, false))
             add(ctx, "pick", gen(.22f, 0f, 2000f, .8f, 700f, 1.6f, false))
             add(ctx, "reload", gen(.1f, .2f, 2000f, .7f, 320f, 1.2f, true))
-            add(ctx, "smg", gen(.06f, .7f, 3200f, .3f, 260f, .4f, true))
-            add(ctx, "rocket", gen(.4f, 1f, 800f, .5f, 150f, .3f, false))
+            addRaw(ctx, "smg", R.raw.gun_smg)
+            addRaw(ctx, "rocket", R.raw.gun_rocket)
             add(ctx, "flame", gen(.12f, 1f, 1200f, 0f, 200f, 1f, false))
             add(ctx, "laser", gen(.22f, 0f, 4000f, 1f, 1500f, .22f, false))
             add(ctx, "boom", gen(.6f, 1f, 600f, .6f, 85f, .3f, false))
@@ -43,6 +43,12 @@ class Sfx(ctx: Context) {
         } catch (e: Exception) {
             // sound is optional; the game runs without it
         }
+    }
+
+    private val gunNames = setOf("pistol", "rifle", "shotgun", "sniper", "smg", "rocket")
+
+    private fun addRaw(ctx: Context, name: String, res: Int) {
+        ids[name] = pool.load(ctx, res, 1)
     }
 
     private fun add(ctx: Context, name: String, samples: ShortArray) {
@@ -55,7 +61,9 @@ class Sfx(ctx: Context) {
         if (muted) return
         val id = ids[name] ?: return
         val v = vol.coerceIn(0f, 1f) * (if (name == "jet") .25f else 1f)
-        pool.play(id, v, v, 1, 0, 1f)
+        // tiny pitch variation so rapid fire does not sound like one looped sample
+        val r = if (name in gunNames) .95f + Random.nextFloat() * .1f else 1f
+        pool.play(id, v, v, 1, 0, r)
     }
 
     fun release() {

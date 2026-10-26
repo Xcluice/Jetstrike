@@ -3,6 +3,8 @@ package com.xcluice.jetstrike
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
@@ -39,6 +41,26 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private var thread: Thread? = null
 
     private val d = resources.displayMetrics.density
+
+    // gun sprites (side view, barrel to the right): length in world units, grip position as a fraction of the sprite
+    private class Spr(val res: Int, val len: Float, val gx: Float, val gy: Float) { var bmp: Bitmap? = null }
+    private val gunSpr = mapOf(
+        "pistol" to Spr(R.drawable.gun_pistol, 26f, .27f, .40f),
+        "smg" to Spr(R.drawable.gun_smg, 36f, .42f, .45f),
+        "rifle" to Spr(R.drawable.gun_rifle, 46f, .36f, .50f),
+        "shotgun" to Spr(R.drawable.gun_shotgun, 48f, .35f, .40f),
+        "rocket" to Spr(R.drawable.gun_rocket, 46f, .38f, .50f),
+        "flame" to Spr(R.drawable.gun_flame, 42f, .35f, .40f),
+        "laser" to Spr(R.drawable.gun_laser, 36f, .22f, .40f),
+        "sniper" to Spr(R.drawable.gun_sniper, 58f, .30f, .50f)
+    )
+    private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val dstR = RectF()
+
+    init {
+        val o = BitmapFactory.Options().apply { inScaled = false }
+        for (sp0 in gunSpr.values) sp0.bmp = try { BitmapFactory.decodeResource(resources, sp0.res, o) } catch (e: Exception) { null }
+    }
     private var W = 1f
     private var H = 1f
     private var scale = 1f
@@ -413,10 +435,12 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             val tint = if (hp) 0xFF5EE06B.toInt() else if (gr) 0xFFFF6F59.toInt() else AMBER
             circle(c, pk.x, by, 29f, (0x22 shl 24) or (tint and 0x00FFFFFF))
             circle(c, pk.x, by, 21f, (0x33 shl 24) or (tint and 0x00FFFFFF))
-            rr(c, pk.x - 15f, by - 15f, pk.x + 15f, by + 15f, 9f, 0x77FFFFFF)
-            sp.shader = null; sp.strokeWidth = 1.6f; sp.color = 0xCCFFFFFF.toInt()
-            rect.set(pk.x - 15f, by - 15f, pk.x + 15f, by + 15f)
-            c.drawRoundRect(rect, 9f, 9f, sp)
+            if (hp || gr) {
+                rr(c, pk.x - 15f, by - 15f, pk.x + 15f, by + 15f, 9f, 0x77FFFFFF)
+                sp.shader = null; sp.strokeWidth = 1.6f; sp.color = 0xCCFFFFFF.toInt()
+                rect.set(pk.x - 15f, by - 15f, pk.x + 15f, by + 15f)
+                c.drawRoundRect(rect, 9f, 9f, sp)
+            }
             if (hp) {
                 rr(c, pk.x - 2.5f, by - 8f, pk.x + 2.5f, by + 8f, 1f, 0xFF3FC95A.toInt())
                 rr(c, pk.x - 8f, by - 2.5f, pk.x + 8f, by + 2.5f, 1f, 0xFF3FC95A.toInt())
@@ -425,8 +449,17 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 rr(c, pk.x - 2.5f, by - 8f, pk.x + 2.5f, by - 4f, 1f, 0xFF8DA4AD.toInt())
                 circle(c, pk.x + 3f, by - 1f, 1.8f, 0xFFFF6F59.toInt())
             } else {
-                val s = when (pk.t) { "shotgun" -> "SG"; "sniper" -> "SN"; "smg" -> "SM"; "rocket" -> "RK"; "flame" -> "FL"; "laser" -> "LS"; else -> "AR" }
-                text(c, s, pk.x, by + 4.5f, 13f, 0xFF04141C.toInt(), Paint.Align.CENTER, body)
+                val spr = gunSpr[pk.t]
+                val bm = spr?.bmp
+                if (spr != null && bm != null) {
+                    val gw = spr.len * 1.1f
+                    val gh = gw * bm.height / bm.width
+                    dstR.set(pk.x - gw / 2f, by - gh / 2f, pk.x + gw / 2f, by + gh / 2f)
+                    c.drawBitmap(bm, null, dstR, bmpPaint)
+                } else {
+                    val s = when (pk.t) { "shotgun" -> "SG"; "sniper" -> "SN"; "smg" -> "SM"; "rocket" -> "RK"; "flame" -> "FL"; "laser" -> "LS"; else -> "AR" }
+                    text(c, s, pk.x, by + 4.5f, 13f, 0xFF04141C.toInt(), Paint.Align.CENTER, body)
+                }
             }
         }
     }
@@ -527,6 +560,15 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
     private fun drawGun(c: Canvas, e: Ent) {
         val w = WEAPONS.getValue(e.wp)
+        val spr = gunSpr[e.wp]
+        val bm = spr?.bmp
+        if (spr != null && bm != null) {
+            val h = spr.len * bm.height / bm.width
+            val l = 9f - spr.gx * spr.len
+            val t = -spr.gy * h
+            dstR.set(l, t, l + spr.len, t + h)
+            c.drawBitmap(bm, null, dstR, bmpPaint)
+        } else {
         rro(c, 5f, -3f, 5f + w.len, 3f, 2f, 0xFF2B3A42.toInt())
         rr(c, 5f + w.len * .35f, -3f, 5f + w.len * .75f, -1f, 0f, 0xFF8DA4AD.toInt())
         when (e.wp) {
@@ -546,6 +588,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 rr(c, 10f, -5f, 5f + w.len - 4f, -2.5f, 1f, 0xFF00E5FF.toInt())
                 rr(c, 6f, 2f, 11f, 8f, 1f, 0xFF1C262B.toInt())
             }
+        }
         }
         if (e.flash > 0f) {
             val fx = 5f + w.len + 3f
@@ -860,17 +903,28 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 sp.shader = null
             }
             if (key == null) {
-                text(c, "EMPTY", r.centerX(), r.centerY() + dp(4f), dp(11f), 0x66FFFFFF, Paint.Align.CENTER, body, .15f)
-                text(c, "grab a gun", r.centerX(), r.centerY() + dp(18f), dp(9f), 0x44FFFFFF, Paint.Align.CENTER, body)
                 continue
             }
             val w = WEAPONS.getValue(key)
-            c.save()
-            c.translate(r.left + dp(10f), r.centerY() - dp(2f))
-            c.scale(d * .95f, d * .95f)
-            gunIcon(c, key, w.len * .55f, 0f, 1f, if (sel) WHITE else 0xAAFFFFFF.toInt())
-            c.restore()
-            text(c, w.n.uppercase(), r.left + dp(8f), r.top + dp(15f), dp(9.5f), if (sel) WHITE else MUTED, Paint.Align.LEFT, body, .06f)
+            val bm = gunSpr[key]?.bmp
+            if (bm != null) {
+                val maxW = r.width() * .58f
+                val maxH = r.height() * .62f
+                val k = min(maxW / bm.width, maxH / bm.height)
+                val bw = bm.width * k
+                val bh = bm.height * k
+                val gcx = r.left + dp(8f) + maxW / 2f
+                dstR.set(gcx - bw / 2f, r.centerY() - bh / 2f, gcx + bw / 2f, r.centerY() + bh / 2f)
+                bmpPaint.alpha = if (sel) 255 else 140
+                c.drawBitmap(bm, null, dstR, bmpPaint)
+                bmpPaint.alpha = 255
+            } else {
+                c.save()
+                c.translate(r.left + dp(10f), r.centerY() - dp(2f))
+                c.scale(d * .95f, d * .95f)
+                gunIcon(c, key, w.len * .55f, 0f, 1f, if (sel) WHITE else 0xAAFFFFFF.toInt())
+                c.restore()
+            }
             val ammo = pl.ammos[i]
             val low = ammo <= max(1, w.mag / 5)
             text(c, ammo.toString(), r.right - dp(9f), r.bottom - dp(11f), dp(21f),
