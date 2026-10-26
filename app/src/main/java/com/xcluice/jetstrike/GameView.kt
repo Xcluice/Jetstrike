@@ -99,6 +99,10 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private val terrFill = intArrayOf(0, 0xFF8C8B82.toInt(), 0xFF8E9091.toInt(), 0xFF7C6B4C.toInt(), 0xFF545345.toInt())
     private val terrP = Paint(Paint.ANTI_ALIAS_FLAG)
     private val tmpPath = Path()
+    private var terrBmp: Bitmap? = null
+    private val terrBmpPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val srcI = android.graphics.Rect()
+    private val dstF = RectF()
     private val groundBack = 0xFF829C6C.toInt()
 
     // touch state
@@ -223,7 +227,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         W = width.toFloat(); H = height.toFloat()
-        baseScale = min(W / 700f, H / 430f)
+        baseScale = min(W / 880f, H / 540f)
         scale = baseScale * game.zoomCur / 4f
         game.vw = W / scale; game.vh = H / scale
         uiK = min(W * .94f / 480f, H * .94f / 300f)
@@ -387,6 +391,27 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         val r = game.camX + game.vw + 30f
         val t = game.camY - 30f
         val b = game.camY + game.vh + 30f
+        var bm = terrBmp
+        if (bm == null && !terrFailed) {
+            // draw the whole terrain once; every frame afterwards is a single bitmap blit
+            try {
+                val nb = Bitmap.createBitmap(MapData.W.toInt(), MapData.H.toInt(), Bitmap.Config.ARGB_8888)
+                drawTerrainVector(Canvas(nb), 0f, 0f, MapData.W, MapData.H)
+                terrBmp = nb; bm = nb
+            } catch (e: Throwable) { terrFailed = true }
+        }
+        if (bm == null) { drawTerrainVector(c, l, t, r, b); return }
+        val sl = max(0, floor(l).toInt()); val st = max(0, floor(t).toInt())
+        val sr = min(bm.width, r.toInt() + 1); val sb = min(bm.height, b.toInt() + 1)
+        if (sr <= sl || sb <= st) return
+        srcI.set(sl, st, sr, sb)
+        dstF.set(sl.toFloat(), st.toFloat(), sr.toFloat(), sb.toFloat())
+        c.drawBitmap(bm, srcI, dstF, terrBmpPaint)
+    }
+
+    private var terrFailed = false
+
+    private fun drawTerrainVector(c: Canvas, l: Float, t: Float, r: Float, b: Float) {
         c.save()
         c.clipRect(l, t, r, b)
         val order = intArrayOf(4, 1, 2, 3)
