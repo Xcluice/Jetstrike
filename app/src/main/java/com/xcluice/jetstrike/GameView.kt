@@ -45,14 +45,14 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     // gun sprites (side view, barrel to the right): length in world units, grip position as a fraction of the sprite
     private class Spr(val res: Int, val len: Float, val gx: Float, val gy: Float) { var bmp: Bitmap? = null }
     private val gunSpr = mapOf(
-        "pistol" to Spr(R.drawable.gun_pistol, 26f, .27f, .40f),
-        "smg" to Spr(R.drawable.gun_smg, 36f, .42f, .45f),
-        "rifle" to Spr(R.drawable.gun_rifle, 46f, .36f, .50f),
-        "shotgun" to Spr(R.drawable.gun_shotgun, 48f, .35f, .40f),
-        "rocket" to Spr(R.drawable.gun_rocket, 46f, .38f, .50f),
-        "flame" to Spr(R.drawable.gun_flame, 42f, .35f, .40f),
-        "laser" to Spr(R.drawable.gun_laser, 36f, .22f, .40f),
-        "sniper" to Spr(R.drawable.gun_sniper, 58f, .30f, .50f)
+        "pistol" to Spr(R.drawable.gun_pistol, 26f, 0.26f, 0.55f),
+        "smg" to Spr(R.drawable.gun_smg, 38f, 0.32f, 0.55f),
+        "rifle" to Spr(R.drawable.gun_rifle, 44f, 0.38f, 0.55f),
+        "shotgun" to Spr(R.drawable.gun_shotgun, 46f, 0.22f, 0.58f),
+        "rocket" to Spr(R.drawable.gun_rocket, 50f, 0.45f, 0.55f),
+        "flame" to Spr(R.drawable.gun_flame, 42f, 0.18f, 0.6f),
+        "laser" to Spr(R.drawable.gun_laser, 40f, 0.18f, 0.62f),
+        "sniper" to Spr(R.drawable.gun_sniper, 58f, 0.2f, 0.62f)
     )
     private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val dstR = RectF()
