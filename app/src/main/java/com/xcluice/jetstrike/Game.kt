@@ -17,9 +17,10 @@ import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.random.Random
 
-const val WORLD_W = 4200f
-const val WORLD_H = 1300f
-const val GROUND_Y = 1250f
+const val WORLD_W = 3424f
+const val STEP_UP = 14f
+const val WORLD_H = 1520f
+const val GROUND_Y = 1000f
 const val GRAV = 1500f
 const val SPEED = 250f
 const val GOAL_SOLO = 15
@@ -165,59 +166,9 @@ val BOT_NAMES: List<String> = listOf("Rook", "Vex", "Blitz", "Echo", "Flux", "Za
 
 fun wIdx(k: String?): Int = if (k == null) -1 else WEAPON_KEYS.indexOf(k)
 
-private val HALF: List<FloatArray> = listOf(
-    floatArrayOf(150f, 1110f, 280f), floatArrayOf(620f, 1110f, 320f), floatArrayOf(1350f, 1110f, 420f),
-    floatArrayOf(380f, 960f, 260f), floatArrayOf(960f, 960f, 300f), floatArrayOf(1650f, 960f, 300f),
-    floatArrayOf(120f, 810f, 260f), floatArrayOf(700f, 810f, 260f), floatArrayOf(1300f, 810f, 320f),
-    floatArrayOf(420f, 660f, 280f), floatArrayOf(1000f, 660f, 260f), floatArrayOf(1600f, 660f, 260f),
-    floatArrayOf(150f, 510f, 240f), floatArrayOf(760f, 510f, 300f), floatArrayOf(1380f, 510f, 260f),
-    floatArrayOf(480f, 360f, 260f), floatArrayOf(1080f, 360f, 280f)
-)
+val SPAWNS: List<FloatArray> = MapData.SPAWNS
 
-private val CENTER: List<FloatArray> = listOf(
-    floatArrayOf(1850f, 1110f, 500f), floatArrayOf(1900f, 810f, 400f),
-    floatArrayOf(1850f, 510f, 500f), floatArrayOf(1750f, 230f, 700f)
-)
-
-val PLATS: List<Plat> = buildList {
-    add(Plat(0f, GROUND_Y, WORLD_W, 600f))
-    for (h in HALF) {
-        add(Plat(h[0], h[1], h[2], 20f))
-        add(Plat(WORLD_W - h[0] - h[2], h[1], h[2], 20f))
-    }
-    for (h in CENTER) add(Plat(h[0], h[1], h[2], 20f))
-    add(Plat(1000f, GROUND_Y - 90f, 24f, 90f, true))
-    add(Plat(WORLD_W - 1024f, GROUND_Y - 90f, 24f, 90f, true))
-    add(Plat(2088f, GROUND_Y - 120f, 24f, 120f, true))
-}
-
-val SPAWNS: List<FloatArray> = buildList {
-    for (i in 1 until PLATS.size) {
-        val pl = PLATS[i]
-        if (!pl.wall) add(floatArrayOf(pl.x + pl.w / 2f, pl.y))
-    }
-    for (x in listOf(300f, 900f, 1500f, 2700f, 3300f, 3900f)) add(floatArrayOf(x, GROUND_Y))
-}
-
-val PICK_DEF: List<Triple<String, Float, Float>> = buildList {
-    val guns = listOf("rifle", "shotgun", "smg", "laser", "rocket", "flame", "sniper", "smg")
-    var gi = 0
-    for (i in 1 until PLATS.size) {
-        val pl = PLATS[i]
-        if (pl.wall || pl.y <= 230f) continue
-        val cx = pl.x + pl.w / 2f
-        when (i % 4) {
-            0 -> add(Triple("health", cx, pl.y - 18f))
-            1 -> add(Triple("gren", cx, pl.y - 18f))
-            2 -> { add(Triple(guns[gi % guns.size], cx, pl.y - 18f)); gi++ }
-        }
-    }
-    add(Triple("sniper", 2100f, 230f - 18f))
-    add(Triple("health", 2100f, GROUND_Y - 18f))
-    add(Triple("rifle", 600f, GROUND_Y - 18f)); add(Triple("rifle", 3600f, GROUND_Y - 18f))
-    add(Triple("shotgun", 1500f, GROUND_Y - 18f)); add(Triple("shotgun", 2700f, GROUND_Y - 18f))
-    add(Triple("gren", 1100f, GROUND_Y - 18f)); add(Triple("gren", 3100f, GROUND_Y - 18f))
-}
+val PICK_DEF: List<Triple<String, Float, Float>> = MapData.PICKS
 
 val SKINS: List<Skin> = listOf(
     Skin("Nova", "#19e3c8", "#0b8f86", "#a6fff1", 0),
@@ -665,26 +616,54 @@ class Game {
     }
 
     /* ---------- physics ---------- */
-    private fun hitRect(e: Ent, p: Plat): Boolean =
-        e.x - 11f < p.x + p.w && e.x + 11f > p.x && e.y - 44f < p.y + p.h && e.y > p.y
-
     private fun moveEnt(e: Ent, dt: Float) {
-        e.x += e.vx * dt
-        for (p in PLATS) {
-            if (hitRect(e, p)) {
-                if (e.vx > 0f) e.x = p.x - 11f
-                else if (e.vx < 0f) e.x = p.x + p.w + 11f
-                else e.x += if (e.x < p.x + p.w / 2f) -1f else 1f
-                e.vx = 0f
+        if (Terrain.boxHit(e.x, e.y)) {
+            var k = 2f
+            while (k < 160f && Terrain.boxHit(e.x, e.y - k)) k += 2f
+            e.y -= k
+        }
+        val wasG = e.onG
+        e.onG = false
+        val n = max(1, ceil(max(abs(e.vx), abs(e.vy)) * dt / 5f).toInt())
+        val sdt = dt / n
+        for (i in 0 until n) {
+            val nx = e.x + e.vx * sdt
+            if (!Terrain.boxHit(nx, e.y)) {
+                e.x = nx
+            } else {
+                // small steps and slopes are walked up instead of blocking
+                var up = 2f
+                var ok = false
+                while (up <= STEP_UP) {
+                    if (!Terrain.boxHit(nx, e.y - up)) { e.x = nx; e.y -= up; ok = true; break }
+                    up += 2f
+                }
+                if (!ok) e.vx = 0f
+            }
+            val ny = e.y + e.vy * sdt
+            if (!Terrain.boxHit(e.x, ny)) {
+                e.y = ny
+            } else {
+                if (e.vy > 0f) {
+                    var yy = e.y
+                    while (yy < ny && !Terrain.boxHit(e.x, yy + 1f)) yy += 1f
+                    e.y = yy
+                    e.onG = true
+                }
+                e.vy = 0f
             }
         }
         e.x = max(14f, min(WORLD_W - 14f, e.x))
-        e.y += e.vy * dt
-        e.onG = false
-        for (p in PLATS) {
-            if (hitRect(e, p)) {
-                if (e.vy >= 0f) { e.y = p.y; e.onG = true } else { e.y = p.y + p.h + 44f }
-                e.vy = 0f
+        if (!e.onG && e.vy >= 0f) {
+            if (Terrain.boxHit(e.x, e.y + 1.5f)) {
+                e.onG = true
+            } else if (wasG && !e.jetting) {
+                // stay glued to the ground when walking down a slope
+                var d = 2f
+                while (d <= STEP_UP) {
+                    if (Terrain.boxHit(e.x, e.y + d + 1.5f)) { e.y += d; e.onG = true; break }
+                    d += 2f
+                }
             }
         }
         if (e.y - 44f < 0f) { e.y = 44f; if (e.vy < 0f) e.vy = 0f }
@@ -726,9 +705,7 @@ class Game {
         for (i in 1 until n) {
             val x = x1 + (x2 - x1) * i / n
             val y = y1 + (y2 - y1) * i / n
-            for (p in PLATS) {
-                if (x > p.x && x < p.x + p.w && y > p.y && y < p.y + p.h) return false
-            }
+            if (Terrain.solid(x, y)) return false
         }
         return true
     }
@@ -819,21 +796,14 @@ class Game {
             val sdt = dt / steps
             for (s in 0 until steps) {
                 g.vy += 1100f * sdt
-                g.x += g.vx * sdt
-                for (p in PLATS) {
-                    if (g.x + 6f > p.x && g.x - 6f < p.x + p.w && g.y + 6f > p.y && g.y - 6f < p.y + p.h) {
-                        g.x -= g.vx * sdt; g.vx = -g.vx * .5f
-                        break
-                    }
-                }
-                g.y += g.vy * sdt
-                for (p in PLATS) {
-                    if (g.x + 6f > p.x && g.x - 6f < p.x + p.w && g.y + 6f > p.y && g.y - 6f < p.y + p.h) {
-                        g.y -= g.vy * sdt
-                        g.vy = if (abs(g.vy) < 40f) 0f else -g.vy * .45f
-                        g.vx *= .85f
-                        break
-                    }
+                val gx = g.x + g.vx * sdt
+                if (Terrain.solid(gx + (if (g.vx > 0f) 6f else -6f), g.y)) g.vx = -g.vx * .5f else g.x = gx
+                val gy = g.y + g.vy * sdt
+                if (Terrain.solid(g.x, gy + (if (g.vy > 0f) 6f else -6f))) {
+                    g.vy = if (abs(g.vy) < 40f) 0f else -g.vy * .45f
+                    g.vx *= .85f
+                } else {
+                    g.y = gy
                 }
             }
             g.fuse -= dt
@@ -1067,12 +1037,9 @@ class Game {
             while (s < steps && !dead) {
                 b.x += b.vx * sdt; b.y += b.vy * sdt
                 if (b.kind == 1 && s % 2 == 0) part(b.x, b.y, rnd(-20f, 20f), rnd(-20f, 20f), .5f, rnd(3f, 6f), 0x99AAAAAA.toInt(), -20f, false)
-                for (p in PLATS) {
-                    if (b.x > p.x && b.x < p.x + p.w && b.y > p.y && b.y < p.y + p.h) {
-                        dead = true
-                        emit(EV_SPARK, b.x, b.y, 0f, 0f)
-                        break
-                    }
+                if (Terrain.solid(b.x, b.y)) {
+                    dead = true
+                    emit(EV_SPARK, b.x, b.y, 0f, 0f)
                 }
                 if (!dead) {
                     for (e in ents) {

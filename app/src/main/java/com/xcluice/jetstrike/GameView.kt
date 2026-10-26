@@ -94,21 +94,12 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private val MUTED = 0xFFA3C8D1.toInt()
     private val RED = 0xFFFF4F6D.toInt()
 
-    private val platBody = PLATS.map { pl ->
-        Paint().apply {
-            shader = LinearGradient(
-                0f, pl.y, 0f, pl.y + min(pl.h, 140f),
-                if (pl.wall) 0xFF4A7A90.toInt() else 0xFF2F5A6E.toInt(),
-                if (pl.wall) 0xFF1A3846.toInt() else 0xFF0E222C.toInt(),
-                Shader.TileMode.CLAMP
-            )
-        }
-    }
-    private val platLip = PLATS.map { pl ->
-        Paint().apply {
-            shader = LinearGradient(pl.x, 0f, pl.x + pl.w, 0f, TEAL, 0xFFFFD23F.toInt(), Shader.TileMode.CLAMP)
-        }
-    }
+    // terrain art, built once from the traced map polygons (class: 1 rock, 2 concrete, 3 wood, 4 cave)
+    private val terrPath = arrayOf(Path(), Terrain.classPath(1), Terrain.classPath(2), Terrain.classPath(3), Terrain.classPath(4))
+    private val terrFill = intArrayOf(0, 0xFF8C8B82.toInt(), 0xFF8E9091.toInt(), 0xFF7C6B4C.toInt(), 0xFF545345.toInt())
+    private val terrP = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val tmpPath = Path()
+    private val groundBack = 0xFF829C6C.toInt()
 
     // touch state
     private var lId = -1
@@ -383,47 +374,93 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     }
 
     private fun drawBackground(c: Canvas) {
-        c.drawRect(0f, 0f, W, H, skyPaint)
-        c.drawCircle(W * .72f, H * .3f, 150f * scale, sunPaint)
-        val horizon = (GROUND_Y - game.camY) * scale
-        for (i in 0 until 6) {
-            var cx = ((i * 330f + game.t * (8f + i * 2f)) * scale * .6f - game.camX * scale * .08f) % (W + 400f)
-            if (cx < 0f) cx += W + 400f
-            cx -= 200f
-            val cy = H * .12f + ((i * 97) % 160) * scale * .6f
-            oval(c, cx, cy, 70f * scale, 16f * scale, 0x24FFFFFF)
-            oval(c, cx + 40f * scale, cy - 8f * scale, 48f * scale, 13f * scale, 0x24FFFFFF)
-        }
-        mountains(c, .15f, horizon - 170f * scale, 40f * scale, 0x8C084658.toInt(), .004f, .011f)
-        mountains(c, .3f, horizon - 90f * scale, 34f * scale, 0xBF053042.toInt(), .006f, .017f)
-        mountains(c, .5f, horizon - 30f * scale, 18f * scale, 0xE603202E.toInt(), .01f, .026f)
+        c.drawColor(0xFFC7DCDF.toInt())
+        val horizon = (760f - game.camY) * scale
+        mountains(c, .10f, horizon - 60f * scale, 46f * scale, 0xFFB5C7C7.toInt(), .0035f, .010f)
+        mountains(c, .22f, horizon + 40f * scale, 34f * scale, 0xFF97B57F.toInt(), .006f, .016f)
+        mountains(c, .38f, horizon + 150f * scale, 30f * scale, groundBack, .008f, .021f)
+        mountains(c, .55f, horizon + 330f * scale, 26f * scale, 0xFF6F8D5A.toInt(), .010f, .027f)
     }
 
     private fun drawPlatforms(c: Canvas) {
-        val left = game.camX - 20f
-        val right = game.camX + game.vw + 20f
-        for (i in PLATS.indices) {
-            val pl = PLATS[i]
-            if (pl.x + pl.w < left || pl.x > right) continue
-            // soft drop shadow under floating platforms
-            if (!pl.wall && pl.y < GROUND_Y - 1f) rr(c, pl.x + 6f, pl.y + pl.h, pl.x + pl.w - 6f, pl.y + pl.h + 12f, 6f, 0x22000000)
-            c.drawRect(pl.x, pl.y, pl.x + pl.w, pl.y + pl.h, platBody[i])
-            rr(c, pl.x, pl.y, pl.x + pl.w, pl.y + 2f, 0f, 0x26FFFFFF)
-            c.drawRect(pl.x, pl.y, pl.x + pl.w, pl.y + 5f, platLip[i])
-            if (!pl.wall && pl.h <= 20f) {
-                var x = pl.x + 16f
-                while (x < pl.x + pl.w - 8f) {
-                    circle(c, x, pl.y + 13f, 2f, 0x40000000)
-                    x += 44f
+        val l = game.camX - 30f
+        val r = game.camX + game.vw + 30f
+        val t = game.camY - 30f
+        val b = game.camY + game.vh + 30f
+        c.save()
+        c.clipRect(l, t, r, b)
+        val order = intArrayOf(4, 1, 2, 3)
+        for (k in order) {
+            terrP.style = Paint.Style.FILL; terrP.shader = null; terrP.color = terrFill[k]
+            c.drawPath(terrPath[k], terrP)
+        }
+        // pebbles in the rock
+        val pb = Terrain.pebbles
+        var i = 0
+        var idx = 0
+        while (i + 2 < pb.size) {
+            val x = pb[i]; val y = pb[i + 1]; val sz = pb[i + 2]
+            i += 3; idx++
+            if (x < l - 20f || x > r + 20f || y < t - 20f || y > b + 20f) continue
+            tmpPath.reset()
+            for (j in 0 until 6) {
+                val ang = j * 1.0472f + idx * .7f
+                val rr0 = sz * (.75f + .25f * ((idx + j) % 3))
+                val px = x + cos(ang) * rr0
+                val py = y + sin(ang) * rr0 * .8f
+                if (j == 0) tmpPath.moveTo(px, py) else tmpPath.lineTo(px, py)
+            }
+            tmpPath.close()
+            terrP.style = Paint.Style.FILL; terrP.color = 0xFFB9BBB6.toInt(); c.drawPath(tmpPath, terrP)
+            terrP.style = Paint.Style.STROKE; terrP.strokeWidth = 1.6f; terrP.color = 0xFF2A2C25.toInt(); c.drawPath(tmpPath, terrP)
+        }
+        // outlines
+        terrP.style = Paint.Style.STROKE; terrP.strokeWidth = 3.4f; terrP.strokeJoin = Paint.Join.ROUND; terrP.color = 0xFF171A12.toInt()
+        for (k in order) c.drawPath(terrPath[k], terrP)
+        // bunker windows
+        for (w in Terrain.windows) {
+            if (w[0] > r || w[0] + w[2] < l) continue
+            terrP.style = Paint.Style.FILL; terrP.color = 0xFFC9DDE0.toInt()
+            c.drawRect(w[0], w[1], w[0] + w[2], w[1] + w[3], terrP)
+            terrP.style = Paint.Style.STROKE; terrP.strokeWidth = 3f; terrP.color = 0xFF2B2E2B.toInt()
+            c.drawRect(w[0], w[1], w[0] + w[2], w[1] + w[3], terrP)
+        }
+        // grass along the up-facing edges
+        for (g in Terrain.grass) {
+            var minX = 1e9f; var maxX = -1e9f
+            var q = 0
+            while (q < g.size) { minX = min(minX, g[q]); maxX = max(maxX, g[q]); q += 2 }
+            if (maxX < l - 30f || minX > r + 30f) continue
+            tmpPath.reset()
+            tmpPath.moveTo(g[0], g[1] - 2f)
+            q = 2
+            while (q < g.size) { tmpPath.lineTo(g[q], g[q + 1] - 2f); q += 2 }
+            terrP.style = Paint.Style.STROKE; terrP.strokeCap = Paint.Cap.ROUND
+            terrP.strokeWidth = 9f; terrP.color = 0xFF24401F.toInt(); c.drawPath(tmpPath, terrP)
+            terrP.strokeWidth = 6f; terrP.color = 0xFF58A04A.toInt(); c.drawPath(tmpPath, terrP)
+            // leaf spikes
+            q = 0
+            var n = 0
+            while (q + 3 < g.size) {
+                val x0 = g[q]; val y0 = g[q + 1]; val x1 = g[q + 2]; val y1 = g[q + 3]
+                val len = hypot(x1 - x0, y1 - y0)
+                var d = 8f
+                while (d < len) {
+                    val f = d / len
+                    val bx = x0 + (x1 - x0) * f
+                    val by = y0 + (y1 - y0) * f - 2f
+                    val h = 9f + ((n * 37 + q * 11) % 9)
+                    val lean = ((n * 53 + q) % 7 - 3) * 1.6f
+                    tmpPath.reset()
+                    tmpPath.moveTo(bx - 5f, by); tmpPath.lineTo(bx + lean, by - h); tmpPath.lineTo(bx + 5f, by); tmpPath.close()
+                    terrP.style = Paint.Style.FILL; terrP.color = 0xFF4C9A44.toInt(); c.drawPath(tmpPath, terrP)
+                    terrP.style = Paint.Style.STROKE; terrP.strokeWidth = 1.8f; terrP.color = 0xFF1F3B1C.toInt(); c.drawPath(tmpPath, terrP)
+                    d += 21f; n++
                 }
-            } else if (!pl.wall) {
-                var x = pl.x + 40f
-                while (x < pl.x + pl.w) {
-                    rr(c, x, pl.y + 30f, x + 3f, pl.y + 120f, 1f, 0x14FFFFFF)
-                    x += 90f
-                }
+                q += 2
             }
         }
+        c.restore()
     }
 
     private fun drawPicks(c: Canvas) {
