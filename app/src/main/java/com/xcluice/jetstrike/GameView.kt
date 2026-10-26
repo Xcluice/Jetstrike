@@ -908,9 +908,6 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         }
     }
 
-    /** The scope button now sets view range: lower zoom = more of the map on screen. */
-    private fun zoomLabel(z: Float): String = String.format("%.1f", 4f / z) + "x"
-
     private fun drawScopeButton(c: Canvas) {
         val z = game.zoomLevel()
         val on = abs(z - 4f) > .1f
@@ -921,12 +918,17 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             c.drawRoundRect(rect, bScope.height() / 2f, bScope.height() / 2f, sp)
         }
         val cx = bScope.centerX()
-        val cy = bScope.centerY() - dp(5f)
+        val cy = bScope.centerY() - dp(3f)
         sp.shader = null; sp.strokeWidth = dp(1.8f); sp.color = WHITE
         c.drawCircle(cx, cy, dp(9f), sp)
         c.drawLine(cx - dp(13f), cy, cx - dp(4f), cy, sp); c.drawLine(cx + dp(4f), cy, cx + dp(13f), cy, sp)
         c.drawLine(cx, cy - dp(13f), cx, cy - dp(4f), sp); c.drawLine(cx, cy + dp(4f), cx, cy + dp(13f), sp)
-        text(c, zoomLabel(z), cx, bScope.centerY() + dp(19f), dp(11f), if (on) AMBER else WHITE, Paint.Align.CENTER, fDisplay)
+        // range pips: one per level, the current one is lit
+        val n = game.scopes().size
+        val cur = game.scopeIdx.coerceIn(0, n - 1)
+        val gap = dp(8f)
+        val x0 = cx - gap * (n - 1) / 2f
+        for (i in 0 until n) circle(c, x0 + gap * i, bScope.centerY() + dp(19f), dp(2.4f), if (i == cur) AMBER else 0x66FFFFFF)
     }
 
     /** Scope overlay when zoomed in or out; every weapon has its own reticle. */
@@ -1003,20 +1005,19 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     }
 
     private fun drawPickButton(c: Canvas, pl: Ent) {
-        val pk = if (pl.alive) game.gunNear(pl) else null
-        val near = pk != null
+        val near = pl.alive && game.gunNear(pl) != null
         roundBtn(c, bPick, near)
         val cx = bPick.centerX()
-        val cy = bPick.centerY() - dp(5f)
-        val a = if (near) 0xFF else 0x77
-        val col = (a shl 24) or 0xFFFFFF
-        rr(c, cx - dp(14f), cy - dp(6f), cx + dp(12f), cy + dp(1f), dp(2f), col)
-        rr(c, cx - dp(14f), cy - dp(9f), cx - dp(4f), cy - dp(5f), dp(1.5f), col)
-        rr(c, cx - dp(9f), cy + dp(1f), cx - dp(3f), cy + dp(10f), dp(1.5f), col)
-        text(c, "PICK", cx, bPick.centerY() + dp(19f), dp(11f), if (near) AMBER else WHITE, Paint.Align.CENTER, fDisplay)
-        if (pk != null) {
-            text(c, WEAPONS.getValue(pk.t).n.uppercase(), cx, bPick.top - dp(6f), dp(10f), AMBER, Paint.Align.CENTER, fDisplay, .06f)
-        }
+        val cy = bPick.centerY()
+        val col = if (near) AMBER else 0x88FFFFFF.toInt()
+        // gun silhouette with a down arrow dropping onto it
+        rr(c, cx - dp(14f), cy + dp(2f), cx + dp(13f), cy + dp(9f), dp(2f), col)
+        rr(c, cx - dp(14f), cy - dp(1f), cx - dp(4f), cy + dp(3f), dp(1.5f), col)
+        rr(c, cx - dp(8f), cy + dp(8f), cx - dp(2f), cy + dp(16f), dp(1.5f), col)
+        rr(c, cx - dp(1.5f), cy - dp(15f), cx + dp(1.5f), cy - dp(5f), dp(1f), col)
+        sp.shader = null; sp.strokeWidth = dp(2.4f); sp.color = col
+        c.drawLine(cx - dp(6f), cy - dp(8f), cx, cy - dp(2f), sp)
+        c.drawLine(cx + dp(6f), cy - dp(8f), cx, cy - dp(2f), sp)
     }
 
     private fun drawScoreboard(c: Canvas, top: Float) {
