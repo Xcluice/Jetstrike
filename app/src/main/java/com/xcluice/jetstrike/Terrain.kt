@@ -15,8 +15,8 @@ object Terrain {
     private const val CELL = 2f
     private const val INV = 1f / CELL
 
-    /** Set to false to make the dark rock passable. */
-    var darkSolid = true
+    /** Dark rock is the cave backdrop: passable by default. Set to true to make it solid. */
+    var darkSolid = false
 
     val polys = ArrayList<TPoly>()
     val grass = ArrayList<FloatArray>()
@@ -78,6 +78,23 @@ object Terrain {
             for (x in 0 until gw) grid[o + x] = if ((row[x] ushr 24) > 100) 1 else 0
         }
         bmp.recycle()
+        smoothGrid()
+    }
+
+    /**
+     * The polygons were traced by hand, so their edges are jagged at the cell level (1-cell spikes and notches)
+     * and snag soldiers. Two passes of a 3x3 majority filter round those off without moving real edges.
+     */
+    private fun smoothGrid() {
+        repeat(2) {
+            val src = grid.copyOf()
+            for (y in 1 until gh - 1) for (x in 1 until gw - 1) {
+                var n = 0
+                for (dy in -1..1) for (dx in -1..1) n += src[(y + dy) * gw + x + dx]
+                val i = y * gw + x
+                if (n >= 6) grid[i] = 1 else if (n <= 3) grid[i] = 0
+            }
+        }
     }
 
     fun solid(x: Float, y: Float): Boolean {

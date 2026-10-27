@@ -18,7 +18,7 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 const val WORLD_W = 3424f
-const val STEP_UP = 14f
+const val STEP_UP = 18f
 const val GREN_WI = 100
 const val WORLD_H = 1520f
 const val GROUND_Y = 1000f
