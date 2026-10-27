@@ -12,7 +12,7 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.random.Random
 
-/** Sound effects: real gunshots from res/raw (CC0 Free Firearms SFX Library), the rest synthesized at startup. */
+/** Sound effects: gunshots punched up with CC0 layers, laser/flame/explosion from Kenney Sci-Fi Sounds (CC0), the rest synthesized at startup. */
 class Sfx(ctx: Context) {
     private val rate = 22050
     private val pool: SoundPool
@@ -36,16 +36,16 @@ class Sfx(ctx: Context) {
             add(ctx, "reload", gen(.1f, .2f, 2000f, .7f, 320f, 1.2f, true))
             addRaw(ctx, "smg", R.raw.gun_smg)
             addRaw(ctx, "rocket", R.raw.gun_rocket)
-            add(ctx, "flame", gen(.12f, 1f, 1200f, 0f, 200f, 1f, false))
-            add(ctx, "laser", gen(.22f, 0f, 4000f, 1f, 1500f, .22f, false))
-            add(ctx, "boom", gen(.6f, 1f, 600f, .6f, 85f, .3f, false))
+            addRaw(ctx, "flame", R.raw.gun_flame)
+            addRaw(ctx, "laser", R.raw.gun_laser)
+            addRaw(ctx, "boom", R.raw.gun_grenade)
             add(ctx, "jet", gen(.1f, 1f, 900f, 0f, 200f, 1f, false))
         } catch (e: Exception) {
             // sound is optional; the game runs without it
         }
     }
 
-    private val gunNames = setOf("pistol", "rifle", "shotgun", "sniper", "smg", "rocket")
+    private val gunNames = setOf("pistol", "rifle", "shotgun", "sniper", "smg", "rocket", "flame", "laser")
 
     private fun addRaw(ctx: Context, name: String, res: Int) {
         ids[name] = pool.load(ctx, res, 1)
