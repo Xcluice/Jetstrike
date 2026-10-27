@@ -56,12 +56,21 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     )
     private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private var grenBmp: Bitmap? = null
+    private var bltBmp: Bitmap? = null
+    private var bltRocket: Bitmap? = null
+    private var bltFlame: Bitmap? = null
+    private var bltLaser: Bitmap? = null
+    private val pixPaint = Paint(Paint.ANTI_ALIAS_FLAG)  // no bitmap filtering: keeps pixel-art bullets crisp
     private val dstR = RectF()
 
     init {
         val o = BitmapFactory.Options().apply { inScaled = false }
         for (sp0 in gunSpr.values) sp0.bmp = try { BitmapFactory.decodeResource(resources, sp0.res, o) } catch (e: Exception) { null }
         grenBmp = try { BitmapFactory.decodeResource(resources, R.drawable.gun_grenade, o) } catch (e: Exception) { null }
+        bltBmp = try { BitmapFactory.decodeResource(resources, R.drawable.blt_bullet, o) } catch (e: Exception) { null }
+        bltRocket = try { BitmapFactory.decodeResource(resources, R.drawable.blt_rocket, o) } catch (e: Exception) { null }
+        bltFlame = try { BitmapFactory.decodeResource(resources, R.drawable.blt_flame, o) } catch (e: Exception) { null }
+        bltLaser = try { BitmapFactory.decodeResource(resources, R.drawable.blt_laser, o) } catch (e: Exception) { null }
     }
     private var W = 1f
     private var H = 1f
@@ -768,8 +777,28 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         }
     }
 
+    /** Draws a bullet sprite pointing along the flight direction, with its leading edge at the bullet position. */
+    private fun sprBullet(c: Canvas, bmp: Bitmap?, b: Bullet, len: Float, filter: Boolean): Boolean {
+        if (bmp == null) return false
+        val h = len * bmp.height / bmp.width
+        c.save()
+        c.translate(b.x, b.y)
+        c.rotate(atan2(b.vy, b.vx) * 180f / PI_F)
+        dstR.set(-len * .85f, -h / 2f, len * .15f, h / 2f)
+        c.drawBitmap(bmp, null, dstR, if (filter) bmpPaint else pixPaint)
+        c.restore()
+        return true
+    }
+
     private fun drawBullets(c: Canvas) {
         for (b in game.bullets) {
+            val done = when (b.kind) {
+                1 -> sprBullet(c, bltRocket, b, 44f, false)
+                2 -> sprBullet(c, bltFlame, b, 24f + Math.random().toFloat() * 8f, true)
+                3 -> sprBullet(c, bltLaser, b, 52f, true)
+                else -> sprBullet(c, bltBmp, b, if (b.big) 34f else 24f, false)
+            }
+            if (done) continue
             when (b.kind) {
                 1 -> {
                     c.save()
