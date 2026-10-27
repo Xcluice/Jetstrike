@@ -55,11 +55,13 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         "sniper" to Spr(R.drawable.gun_sniper, 58f, 0.2f, 0.62f)
     )
     private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private var grenBmp: Bitmap? = null
     private val dstR = RectF()
 
     init {
         val o = BitmapFactory.Options().apply { inScaled = false }
         for (sp0 in gunSpr.values) sp0.bmp = try { BitmapFactory.decodeResource(resources, sp0.res, o) } catch (e: Exception) { null }
+        grenBmp = try { BitmapFactory.decodeResource(resources, R.drawable.gun_grenade, o) } catch (e: Exception) { null }
     }
     private var W = 1f
     private var H = 1f
@@ -95,8 +97,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private val RED = 0xFFFF4F6D.toInt()
 
     // terrain art, built once from the traced map polygons (class: 1 rock, 2 concrete, 3 wood, 4 cave)
-    private val terrPath = arrayOf(Path(), Terrain.classPath(1), Terrain.classPath(2), Terrain.classPath(3), Terrain.classPath(4))
-    private val terrFill = intArrayOf(0, 0xFF8C8B82.toInt(), 0xFF8E9091.toInt(), 0xFF7C6B4C.toInt(), 0xFF545345.toInt())
+    private val terrPath = arrayOf(Path(), Terrain.classPath(1), Terrain.classPath(2), Terrain.classPath(3), Terrain.classPath(4), Terrain.classPath(5))
+    private val terrFill = intArrayOf(0, 0xFF8C8B82.toInt(), 0xFF8E9091.toInt(), 0xFF7C6B4C.toInt(), 0xFF545345.toInt(), 0xFF46544F.toInt())
     private val terrP = Paint(Paint.ANTI_ALIAS_FLAG)
     private val tmpPath = Path()
     private var terrBmp: Bitmap? = null
@@ -397,7 +399,14 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             try {
                 val nb = Bitmap.createBitmap(MapData.W.toInt(), MapData.H.toInt(), Bitmap.Config.ARGB_8888)
                 drawTerrainVector(Canvas(nb), 0f, 0f, MapData.W, MapData.H)
-                terrBmp = nb; bm = nb
+                var fin: Bitmap = nb
+                if (Build.VERSION.SDK_INT >= 26) {
+                    try {
+                        val hw = nb.copy(Bitmap.Config.HARDWARE, false)
+                        if (hw != null) { fin = hw; nb.recycle() }
+                    } catch (e: Throwable) { }
+                }
+                terrBmp = fin; bm = fin
             } catch (e: Throwable) { terrFailed = true }
         }
         if (bm == null) { drawTerrainVector(c, l, t, r, b); return }
@@ -414,7 +423,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private fun drawTerrainVector(c: Canvas, l: Float, t: Float, r: Float, b: Float) {
         c.save()
         c.clipRect(l, t, r, b)
-        val order = intArrayOf(4, 1, 2, 3)
+        val order = intArrayOf(5, 4, 1, 2, 3)
         for (k in order) {
             terrP.style = Paint.Style.FILL; terrP.shader = null; terrP.color = terrFill[k]
             c.drawPath(terrPath[k], terrP)
@@ -1218,14 +1227,25 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             val a = min(1f, f.t / .5f)
             val alpha = (a * 255f).toInt()
             tp.typeface = body; tp.textSize = dp(13f); tp.letterSpacing = 0f
-            val t2 = " took out "
+            val t2 = " killed "
             val wA = tp.measureText(f.a)
             val wM = tp.measureText(t2)
             val wB = tp.measureText(f.b)
-            val tw = wA + wM + wB + dp(20f)
+            val kbm = if (f.wi == GREN_WI) grenBmp else gunSpr[WEAPON_KEYS.getOrNull(f.wi) ?: "pistol"]?.bmp
+            val iconH = dp(18f)
+            val iconW = if (kbm != null) min(dp(46f), iconH * kbm.width / kbm.height) else 0f
+            val tw = iconW + dp(6f) + wA + wM + wB + dp(20f)
             val x0 = W - mr - tw
             rr(c, x0, fy, x0 + tw, fy + dp(24f), dp(12f), ((alpha * .45f).toInt() shl 24) or 0x062030)
             var tx = x0 + dp(10f)
+            if (kbm != null) {
+                val ih = iconW * kbm.height / kbm.width
+                dstR.set(tx, fy + dp(12f) - ih / 2f, tx + iconW, fy + dp(12f) + ih / 2f)
+                bmpPaint.alpha = alpha
+                c.drawBitmap(kbm, null, dstR, bmpPaint)
+                bmpPaint.alpha = 255
+            }
+            tx += iconW + dp(6f)
             text(c, f.a, tx, fy + dp(16f), dp(13f), (alpha shl 24) or (f.ac and 0x00FFFFFF), Paint.Align.LEFT, body)
             tx += wA
             text(c, t2, tx, fy + dp(16f), dp(13f), ((alpha * .7f).toInt() shl 24) or 0xEAF8FB, Paint.Align.LEFT, body)

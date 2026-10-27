@@ -19,6 +19,7 @@ import kotlin.random.Random
 
 const val WORLD_W = 3424f
 const val STEP_UP = 14f
+const val GREN_WI = 100
 const val WORLD_H = 1520f
 const val GROUND_Y = 1000f
 const val GRAV = 1500f
@@ -109,6 +110,7 @@ class Ent(val id: Int, var skin: Skin, val team: Int) {
     var sDone = 0
     var rDone = 0
     var pDone = 0
+    var killWi = 0
     // network interpolation targets
     var tx = 0f
     var ty = 0f
@@ -136,7 +138,7 @@ class Ent(val id: Int, var skin: Skin, val team: Int) {
 
 class Bullet(
     var x: Float, var y: Float, val vx: Float, val vy: Float, val dmg: Float,
-    var l: Float, val o: Ent?, val team: Int, val tr: Float, val big: Boolean, val kind: Int = 0
+    var l: Float, val o: Ent?, val team: Int, val tr: Float, val big: Boolean, val kind: Int = 0, val wi: Int = 0
 )
 
 class Grenade(var x: Float, var y: Float, var vx: Float, var vy: Float, var fuse: Float, val oid: Int, val team: Int)
@@ -150,7 +152,7 @@ class DmgText(var x: Float, var y: Float, val text: String, val col: Int) {
     var l = 1.0f
 }
 
-class FeedItem(val a: String, val ac: Int, val b: String, val bc: Int) {
+class FeedItem(val a: String, val ac: Int, val b: String, val bc: Int, val wi: Int = 0) {
     var t = 4f
 }
 
@@ -606,7 +608,7 @@ class Game {
                 val ka = ents.getOrNull(a.toInt())
                 val kb = ents.getOrNull(b.toInt())
                 if (ka != null && kb != null) {
-                    feed.add(FeedItem(nameOf(ka.id), ka.skin.c, nameOf(kb.id), kb.skin.c))
+                    feed.add(FeedItem(nameOf(ka.id), ka.skin.c, nameOf(kb.id), kb.skin.c, x.toInt()))
                     while (feed.size > 4) feed.removeAt(0)
                 }
             }
@@ -769,7 +771,7 @@ class Game {
         for (i in 0 until w.pel) {
             val a = e.aim + (Random.nextFloat() - .5f) * 2f * w.spr
             val sp = w.spd * (if (w.pel > 1) rnd(.85f, 1.05f) else 1f)
-            bullets.add(Bullet(mxp, myp, cos(a) * sp, sin(a) * sp, w.dmg, w.life, e, e.team, w.tr, w.key == "sniper", w.kind))
+            bullets.add(Bullet(mxp, myp, cos(a) * sp, sin(a) * sp, w.dmg, w.life, e, e.team, w.tr, w.key == "sniper", w.kind, wIdx(w.key)))
         }
         e.vx -= cos(e.aim) * w.rec * .5f
         e.vy -= sin(e.aim) * w.rec * .15f
@@ -816,10 +818,10 @@ class Game {
     }
 
     private fun explode(g: Grenade) {
-        explodeAt(g.x, g.y, g.oid, 95f, GREN_R)
+        explodeAt(g.x, g.y, g.oid, 95f, GREN_R, GREN_WI)
     }
 
-    private fun explodeAt(x: Float, y: Float, oid: Int, maxDmg: Float, radius: Float) {
+    private fun explodeAt(x: Float, y: Float, oid: Int, maxDmg: Float, radius: Float, wi: Int) {
         emit(EV_EXPL, x, y, 0f, 0f)
         val owner = ents.getOrNull(oid)
         for (e in ents) {
@@ -829,15 +831,16 @@ class Game {
             val d = hypot(dx, dy)
             if (d < radius) {
                 val f = 1f - d / radius
-                if (owner != null) damage(e, maxDmg * f + 8f, owner, atan2(dy, dx))
+                if (owner != null) damage(e, maxDmg * f + 8f, owner, atan2(dy, dx), wi)
                 e.vx += (dx / max(d, 1f)) * 520f * f
                 e.vy += (dy / max(d, 1f)) * 520f * f - 120f * f
             }
         }
     }
 
-    private fun damage(e: Ent, dmg: Float, by: Ent, ang: Float) {
+    private fun damage(e: Ent, dmg: Float, by: Ent, ang: Float, wi: Int) {
         if (!e.alive || e.inv > 0f || by.team == e.team) return
+        e.killWi = wi
         e.hp -= dmg
         e.vx += cos(ang) * dmg * 2.2f
         emit(EV_DMG, e.x, e.y - 52f, dmg, e.id.toFloat())
@@ -849,7 +852,7 @@ class Game {
         emit(EV_DIE, e.x, e.y - 22f, e.id.toFloat(), 0f)
         if (by !== e) {
             by.kills++
-            if (mode == Mode.PLAY) emit(EV_FEED, 0f, 0f, by.id.toFloat(), e.id.toFloat())
+            if (mode == Mode.PLAY) emit(EV_FEED, e.killWi.toFloat(), 0f, by.id.toFloat(), e.id.toFloat())
         }
         if (mode == Mode.PLAY && by !== e) {
             if (rules == Rules.TEAM) {
@@ -990,6 +993,8 @@ class Game {
         e.gCool -= dt
         if (e.bot) botThink(e, dt)
         movePhysics(e, dt)
+        // anyone who slips out below the island is out of the match for a moment
+        if (e.y > WORLD_H - 60f) { die(e, e); return }
         if (e.jetting) {
             jetFx(e)
             e.jetSnd -= dt
@@ -1047,7 +1052,7 @@ class Game {
                         if (abs(b.x - e.x) < 14f && b.y > e.y - 54f && b.y < e.y + 2f) {
                             if (e.inv > 0f) continue
                             val o = b.o
-                            if (o != null && b.kind != 1) damage(e, b.dmg, o, atan2(b.vy, b.vx))
+                            if (o != null && b.kind != 1) damage(e, b.dmg, o, atan2(b.vy, b.vx), b.wi)
                             dead = true
                             break
                         }
@@ -1056,7 +1061,7 @@ class Game {
                 s++
             }
             b.l -= dt
-            if (b.kind == 1 && (dead || b.l <= 0f)) explodeAt(b.x, b.y, b.o?.id ?: -1, 85f, 135f)
+            if (b.kind == 1 && (dead || b.l <= 0f)) explodeAt(b.x, b.y, b.o?.id ?: -1, 85f, 135f, wIdx("rocket"))
             if (dead || b.l <= 0f || b.x < -50f || b.x > WORLD_W + 50f || b.y < -200f || b.y > WORLD_H + 100f) {
                 val last = bullets.size - 1
                 bullets[i] = bullets[last]

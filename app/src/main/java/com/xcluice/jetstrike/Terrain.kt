@@ -9,14 +9,14 @@ class TPoly(val cls: Int, val pts: FloatArray)
 
 /**
  * The level: polygons traced from the real map layout (see MapData), rasterised once into a
- * collision grid. Classes: 1 rock, 2 concrete, 3 wood (all solid) and 4 background cave (not solid).
+ * collision grid. Classes: 1 rock, 2 concrete, 3 wood, 4 dark rock (all solid) and 5 bunker room (open, background only).
  */
 object Terrain {
     private const val CELL = 2f
     private const val INV = 1f / CELL
 
-    /** Flip to true if the dark cave areas should block movement too. */
-    var darkSolid = false
+    /** Set to false to make the dark rock passable. */
+    var darkSolid = true
 
     val polys = ArrayList<TPoly>()
     val grass = ArrayList<FloatArray>()
