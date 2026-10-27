@@ -238,6 +238,9 @@ class Game {
     var scopeIdx = 0
     var zoomCur = 4f
     private var lastWp = "pistol"
+    private var lastMode = Mode.MENU
+    /** Range level chosen for each gun, kept for the whole match (cleared when a new game starts). */
+    private val scopeByWp = HashMap<String, Int>()
 
     // touch sticks and button requests, set by the view
     var lx = 0f
@@ -439,8 +442,13 @@ class Game {
     fun update(dt: Float) {
         t += dt
         if (noticeT > 0f) noticeT -= dt
-        if (player.wp != lastWp) { lastWp = player.wp; scopeIdx = 0 }
-        if (!player.alive) scopeIdx = 0
+        if (mode == Mode.PLAY && lastMode != Mode.PLAY) { scopeByWp.clear(); scopeIdx = 0 }
+        lastMode = mode
+        if (player.wp != lastWp) {
+            scopeByWp[lastWp] = scopeIdx
+            lastWp = player.wp
+            scopeIdx = scopeByWp[lastWp] ?: 0
+        }
         val zt = if (mode == Mode.PLAY || mode == Mode.OVER) zoomLevel() else 4f
         zoomCur += (zt - zoomCur) * (1f - exp(-8f * dt))
         pollNet()
