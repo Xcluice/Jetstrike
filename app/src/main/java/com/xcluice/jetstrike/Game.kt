@@ -258,7 +258,7 @@ val WEAPONS: Map<String, Weapon> = mapOf(
     "pistol" to Weapon("pistol", "Pistol", .26f, 16f, 1000f, .025f, 12, 1.0f, 1, .75f, 23f, 30f, .02f, floatArrayOf(4f, 3.2f), 0, 0),
     "smg" to Weapon("smg", "SMG", .06f, 6f, 1100f, .09f, 40, 1.4f, 1, .7f, 30f, 10f, .02f, floatArrayOf(4f, 3.2f), 0, 0),
     "rifle" to Weapon("rifle", "Assault Rifle", .095f, 9f, 1150f, .05f, 30, 1.5f, 1, .8f, 31f, 22f, .025f, floatArrayOf(4f, 3.3f, 2.7f), 1, 0),
-    "shotgun" to Weapon("shotgun", "Shotgun", .75f, 9f, 900f, .2f, 6, 1.7f, 7, .34f, 40f, 170f, .02f, floatArrayOf(4f, 3.3f), 2, 0),
+    "shotgun" to Weapon("shotgun", "Shotgun", .75f, 100f / 7f, 900f, .2f, 6, 1.7f, 7, .34f, 40f, 170f, .02f, floatArrayOf(4f, 3.3f), 2, 0),
     "rocket" to Weapon("rocket", "Rocket Launcher", 1.2f, 0f, 650f, .01f, 3, 2.4f, 1, 2.0f, 32f, 160f, .03f, floatArrayOf(4f, 3.3f, 2.7f), 3, 1),
     "flame" to Weapon("flame", "Flamethrower", .06f, 5f, 520f, .22f, 100, 2.2f, 1, .38f, 38f, 6f, .01f, floatArrayOf(4f, 3.3f), 0, 2),
     "laser" to Weapon("laser", "Laser Rifle", .42f, 24f, 3200f, 0f, 12, 1.8f, 1, .5f, 37f, 40f, .03f, floatArrayOf(4f, 3.3f, 2.7f), 1, 3),
@@ -1497,7 +1497,7 @@ class Game {
                 s++
             }
             b.l -= dt
-            if (b.kind == 1 && (dead || b.l <= 0f)) explodeAt(b.x, b.y, b.o?.id ?: -1, if (b.o?.boss == true) 45f else 85f, 135f, wIdx("rocket"))
+            if (b.kind == 1 && (dead || b.l <= 0f)) explodeAt(b.x, b.y, b.o?.id ?: -1, if (b.o?.boss == true) 45f else 92f, 135f, wIdx("rocket"))
             if (dead || b.l <= 0f || b.x < -50f || b.x > WORLD_W + 50f || b.y < -200f || b.y > WORLD_H + 100f) {
                 val last = bullets.size - 1
                 bullets[i] = bullets[last]
