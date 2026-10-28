@@ -106,7 +106,9 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private val RED = 0xFFFF4F6D.toInt()
 
     // terrain art, built once from the traced map polygons (class: 1 rock, 2 concrete, 3 wood, 4 cave)
-    private val terrPath = arrayOf(Path(), Terrain.classPath(1), Terrain.classPath(2), Terrain.classPath(3), Terrain.classPath(4), Terrain.classPath(5))
+    private var terrVer = Terrain.version
+    private val terrFillArena = intArrayOf(0, 0xFF343A4A.toInt(), 0xFF566079.toInt(), 0xFF7C6B4C.toInt(), 0xFF545345.toInt(), 0xFF46544F.toInt())
+    private var terrPath = arrayOf(Path(), Terrain.classPath(1), Terrain.classPath(2), Terrain.classPath(3), Terrain.classPath(4), Terrain.classPath(5))
     private val terrFill = intArrayOf(0, 0xFF8C8B82.toInt(), 0xFF8E9091.toInt(), 0xFF7C6B4C.toInt(), 0xFF545345.toInt(), 0xFF46544F.toInt())
     private val terrP = Paint(Paint.ANTI_ALIAS_FLAG)
     private val tmpPath = Path()
@@ -200,7 +202,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     )
     private val hostBtns = listOf(
         backBtn,
-        Btn("team", 36f, 114f, 238f, 150f), Btn("solo", 242f, 114f, 444f, 150f),
+        Btn("team", 36f, 114f, 170f, 150f), Btn("solo", 176f, 114f, 310f, 150f), Btn("story", 316f, 114f, 444f, 150f),
         Btn("easy", 36f, 158f, 168f, 190f), Btn("normal", 174f, 158f, 306f, 190f), Btn("hard", 312f, 158f, 444f, 190f),
         Btn("start", 36f, 208f, 444f, 262f)
     )
@@ -389,6 +391,14 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     }
 
     private fun drawBackground(c: Canvas) {
+        if (Terrain.mapId == 1) {
+            c.drawColor(0xFF150F22.toInt())
+            val hz = (820f - game.camY) * scale
+            mountains(c, .10f, hz - 40f * scale, 70f * scale, 0xFF2A1A3C.toInt(), .0035f, .010f)
+            mountains(c, .22f, hz + 70f * scale, 50f * scale, 0xFF3A1F42.toInt(), .006f, .016f)
+            mountains(c, .38f, hz + 200f * scale, 36f * scale, 0xFF4A2340.toInt(), .008f, .021f)
+            return
+        }
         c.drawColor(0xFFC7DCDF.toInt())
         val horizon = (760f - game.camY) * scale
         mountains(c, .10f, horizon - 60f * scale, 46f * scale, 0xFFB5C7C7.toInt(), .0035f, .010f)
@@ -402,12 +412,17 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         val r = game.camX + game.vw + 30f
         val t = game.camY - 30f
         val b = game.camY + game.vh + 30f
+        if (terrVer != Terrain.version) {
+            terrVer = Terrain.version
+            terrPath = arrayOf(Path(), Terrain.classPath(1), Terrain.classPath(2), Terrain.classPath(3), Terrain.classPath(4), Terrain.classPath(5))
+            terrBmp?.recycle(); terrBmp = null; terrFailed = false
+        }
         var bm = terrBmp
         if (bm == null && !terrFailed) {
             // draw the whole terrain once; every frame afterwards is a single bitmap blit
             try {
-                val nb = Bitmap.createBitmap(MapData.W.toInt(), MapData.H.toInt(), Bitmap.Config.ARGB_8888)
-                drawTerrainVector(Canvas(nb), 0f, 0f, MapData.W, MapData.H)
+                val nb = Bitmap.createBitmap(Terrain.worldW.toInt(), Terrain.worldH.toInt(), Bitmap.Config.ARGB_8888)
+                drawTerrainVector(Canvas(nb), 0f, 0f, Terrain.worldW, Terrain.worldH)
                 var fin: Bitmap = nb
                 if (Build.VERSION.SDK_INT >= 26) {
                     try {
@@ -434,7 +449,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         c.clipRect(l, t, r, b)
         val order = intArrayOf(5, 4, 1, 2, 3)
         for (k in order) {
-            terrP.style = Paint.Style.FILL; terrP.shader = null; terrP.color = terrFill[k]
+            terrP.style = Paint.Style.FILL; terrP.shader = null; terrP.color = (if (Terrain.mapId == 1) terrFillArena else terrFill)[k]
             c.drawPath(terrPath[k], terrP)
         }
         // pebbles in the rock
@@ -460,6 +475,11 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         // outlines
         terrP.style = Paint.Style.STROKE; terrP.strokeWidth = 3.4f; terrP.strokeJoin = Paint.Join.ROUND; terrP.color = 0xFF171A12.toInt()
         for (k in order) c.drawPath(terrPath[k], terrP)
+        if (Terrain.mapId == 1) {
+            // glowing edges on the arena steel
+            terrP.strokeWidth = 2f; terrP.color = 0xCCFF5A6E.toInt()
+            c.drawPath(terrPath[1], terrP); c.drawPath(terrPath[2], terrP)
+        }
         // bunker windows
         for (w in Terrain.windows) {
             if (w[0] > r || w[0] + w[2] < l) continue
@@ -1499,10 +1519,10 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
     private fun rulesText(r: Rules): String = when (r) { Rules.TEAM -> "TEAM VS BOTS"; Rules.SOLO -> "SOLO"; else -> "STORY" }
 
-    private fun rulesRow(c: Canvas, tb: Btn, sb: Btn) {
+    private fun rulesRow(c: Canvas, tb: Btn, sb: Btn, st: Btn) {
         btnShape(c, tb, false, if (tb.r - tb.l > 150f) "TEAM VS BOTS" else "TEAM", game.menuRules == Rules.TEAM)
         btnShape(c, sb, false, "SOLO", game.menuRules == Rules.SOLO)
-        if (tb.r - tb.l <= 150f) btnShape(c, byId(menuBtns, "story"), false, "STORY", game.menuRules == Rules.STORY)
+        btnShape(c, st, false, "STORY", game.menuRules == Rules.STORY)
     }
 
     private fun diffRow(c: Canvas, list: List<Btn>) {
@@ -1556,12 +1576,12 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 text(c, "EDIT", 176f, 270f, 11f, AMBER, Paint.Align.RIGHT, body, .12f)
                 // play options
                 text(c, "MODE", 204f, 76f, 10f, MUTED, Paint.Align.LEFT, body, .2f)
-                rulesRow(c, byId(menuBtns, "team"), byId(menuBtns, "solo"))
+                rulesRow(c, byId(menuBtns, "team"), byId(menuBtns, "solo"), byId(menuBtns, "story"))
                 text(c, when (g.menuRules) { Rules.TEAM -> "You and friends vs bots"; Rules.SOLO -> "Every fighter for themselves"; else -> "4 waves, then the Overlord" }, 460f, 76f, 10f, AMBER, Paint.Align.RIGHT, body, .04f)
                 if (g.menuRules == Rules.STORY) {
                     rr(c, 204f, 124f, 460f, 164f, 12f, 0x40000000)
                     text(c, "Clear each wave to climb to the next tier.", 214f, 140f, 10f, WHITE, Paint.Align.LEFT, body, .02f)
-                    text(c, "Die once and it all restarts from wave 1.", 214f, 156f, 10f, RED, Paint.Align.LEFT, body, .02f)
+                    text(c, "Everyone down and it restarts from wave 1.", 214f, 156f, 10f, RED, Paint.Align.LEFT, body, .02f)
                 } else
                 text(c, "BOT SKILL", 204f, 128f, 10f, MUTED, Paint.Align.LEFT, body, .2f)
                 if (g.menuRules != Rules.STORY) diffRow(c, menuBtns)
@@ -1581,10 +1601,10 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 text(c, "Your address: $ip", 36f, 78f, 13f, MUTED, Paint.Align.LEFT, body)
                 text(c, "Friends tap JOIN LAN on the same Wi-Fi or hotspot.", 36f, 96f, 12f, MUTED, Paint.Align.LEFT, body)
                 text(c, "$n/$cap", 444f, 96f, 22f, AMBER, Paint.Align.RIGHT, fDisplay)
-                rulesRow(c, byId(hostBtns, "team"), byId(hostBtns, "solo"))
+                rulesRow(c, byId(hostBtns, "team"), byId(hostBtns, "solo"), byId(hostBtns, "story"))
                 diffRow(c, hostBtns)
                 btnShape(c, byId(hostBtns, "start"), true, if (n > 1) "START MATCH" else "START (WAITING FOR PLAYERS)", false)
-                text(c, if (g.menuRules == Rules.TEAM) "Humans team up against 3 bots (bots fill the empty seats)." else "Free for all: every player and bot for themselves.",
+                text(c, when (g.menuRules) { Rules.TEAM -> "Humans team up against 3 bots (bots fill the empty seats)."; Rules.SOLO -> "Free for all: every player and bot for themselves."; else -> "Co-op story: fight the waves together, then the Overlord." },
                     240f, 284f, 11f, MUTED, Paint.Align.CENTER, body)
             }
             Mode.JOIN -> {
@@ -1601,7 +1621,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                         rect.set(b.l, b.t, b.r, b.b)
                         c.drawRoundRect(rect, 14f, 14f, sp)
                         text(c, h.ip, b.l + 16f, b.t + 20f, 15f, WHITE, Paint.Align.LEFT, body)
-                        text(c, rulesText(if (h.rules == 0) Rules.TEAM else Rules.SOLO), b.l + 16f, b.t + 37f, 11f, MUTED, Paint.Align.LEFT, body, .1f)
+                        text(c, rulesText(Rules.values().getOrElse(h.rules) { Rules.TEAM }), b.l + 16f, b.t + 37f, 11f, MUTED, Paint.Align.LEFT, body, .1f)
                         text(c, "${h.players}/${h.max}   JOIN", b.r - 16f, b.t + 30f, 16f, AMBER, Paint.Align.RIGHT, fDisplay)
                     }
                 }

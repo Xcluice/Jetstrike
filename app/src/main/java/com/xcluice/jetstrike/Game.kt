@@ -17,10 +17,10 @@ import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.random.Random
 
-const val WORLD_W = 3424f
+val WORLD_W: Float get() = Terrain.worldW
 const val STEP_UP = 18f
 const val GREN_WI = 100
-const val WORLD_H = 1520f
+val WORLD_H: Float get() = Terrain.worldH
 const val GROUND_Y = 1000f
 const val GRAV = 1500f
 const val SPEED = 250f
@@ -38,6 +38,8 @@ const val EV_FEED = 6
 const val EV_HEAL = 7
 const val EV_SPARK = 8
 const val EV_THROW = 9
+const val EV_TELE = 10
+const val STORY_POOL = 16
 
 fun rnd(a: Float, b: Float): Float = a + Random.nextFloat() * (b - a)
 
@@ -180,9 +182,9 @@ val BOT_NAMES: List<String> = listOf("Rook", "Vex", "Blitz", "Echo", "Flux", "Za
 
 fun wIdx(k: String?): Int = if (k == null) -1 else WEAPON_KEYS.indexOf(k)
 
-val SPAWNS: List<FloatArray> = MapData.SPAWNS
+val SPAWNS: List<FloatArray> get() = Terrain.spawns
 
-val PICK_DEF: List<Triple<String, Float, Float>> = MapData.PICKS
+val PICK_DEF: List<Triple<String, Float, Float>> get() = Terrain.picks
 
 val SKINS: List<Skin> = listOf(
     Skin("Nova", "#19e3c8", "#0b8f86", "#a6fff1", 0),
@@ -321,6 +323,7 @@ class Game {
         rules = r
         humans = humanCount
         localId = local
+        loadMap(0)
         ents.clear(); bullets.clear(); grenades.clear(); parts.clear(); texts.clear(); picks.clear(); feed.clear()
         outEvents.clear()
         val n = if (r == Rules.TEAM) 8 else max(7, humanCount)
@@ -389,7 +392,6 @@ class Game {
 
     fun hostOpen() {
         val n = net ?: return
-        if (menuRules == Rules.STORY) { menuRules = Rules.TEAM; note("Story mode is single player, so hosting uses Team.") }
         buildEnts(Rules.SOLO, 0, 0)
         if (n.startHosting(menuRules.ordinal, diffIndex())) {
             mode = Mode.HOST
@@ -408,7 +410,7 @@ class Game {
         val names = ArrayList<String>()
         skins[0] = mySkin; names.add(myName)
         for ((i, c) in cl.withIndex()) { c.playerId = i + 1; skins[i + 1] = c.skin; names.add(c.name) }
-        buildEnts(menuRules, hc, 0, skins, names)
+        if (menuRules == Rules.STORY) buildStoryEnts(hc, 0, skins, names) else buildEnts(menuRules, hc, 0, skins, names)
         for ((i, c) in cl.withIndex()) {
             remotes[i + 1] = c.rin
             n.sendStart(c, menuRules.ordinal, diffIndex(), c.playerId, hc, skins, names)
@@ -417,6 +419,7 @@ class Game {
         mode = Mode.PLAY
         paused = false
         snapAcc = 0f
+        if (menuRules == Rules.STORY) beginStoryRun()
         updateCam(0f, true)
     }
 
@@ -484,84 +487,162 @@ class Game {
         return null
     }
 
+    var mapId = 0
+
+    private fun loadMap(id: Int) {
+        Terrain.load(id)
+        mapId = id
+        picks.clear()
+        for (d in PICK_DEF) picks.add(Pick(d.first, d.second, d.third))
+        bullets.clear(); grenades.clear()
+    }
+
+    private fun coopScale(): Float = 1f + .6f * (humans - 1)
+
+    private fun leadHuman(): Ent {
+        for (e in ents) if (e.human && e.alive) return e
+        return ents[0]
+    }
+
+    /** Humans first, then a fixed pool of enemy slots (the host switches them on and off as waves come and go). */
+    private fun buildStoryEnts(hc: Int, local: Int, pSkins: IntArray?, pNames: List<String>?) {
+        rules = Rules.STORY
+        humans = hc
+        localId = local
+        ents.clear(); bullets.clear(); grenades.clear(); parts.clear(); texts.clear(); picks.clear(); feed.clear()
+        outEvents.clear()
+        for (i in 0 until hc) {
+            val e = Ent(i, SKINS[(pSkins?.getOrNull(i) ?: mySkin).coerceIn(0, SKINS.size - 1)], 0)
+            e.human = true; e.bot = false
+            e.name = pNames?.getOrNull(i) ?: (if (i == local) myName else "P${i + 1}")
+            ents.add(e)
+        }
+        for (k in 0 until STORY_POOL) {
+            val id = hc + k
+            val e = Ent(id, SKINS[(id * 3 + 1) % SKINS.size], 1)
+            e.human = false; e.bot = true; e.alive = false
+            e.name = BOT_NAMES[id % BOT_NAMES.size]
+            ents.add(e)
+        }
+        player = ents[min(local, ents.size - 1)]
+        matchTime = 0f; shake = 0f; vigT = 0f; winId = -1; winTeam = -1
+        panX = 0f; panY = 0f; scopeIdx = 0
+    }
+
     fun startStory() {
         net?.shutdown()
         role = Role.OFFLINE
-        rules = Rules.STORY
-        humans = 1; localId = 0
-        ents.clear(); bullets.clear(); grenades.clear(); parts.clear(); texts.clear(); picks.clear(); feed.clear()
-        outEvents.clear()
-        val p = Ent(0, SKINS[mySkin.coerceIn(0, SKINS.size - 1)], 0)
-        p.human = true; p.bot = false; p.name = myName
-        ents.add(p)
-        player = p
-        p.x = 1432f; p.y = 1080f
-        p.hp = 100f; p.fuel = 100f; p.alive = true; p.inv = 2f; p.grenades = 3
-        p.tx = p.x; p.ty = p.y
-        for (d in PICK_DEF) picks.add(Pick(d.first, d.second, d.third))
-        matchTime = 0f; shake = 0f; vigT = 0f; winId = -1; winTeam = -1
-        pendingSummon = 0; scopeIdx = 0
-        panX = 0f; panY = 0f
-        storyWave = 0
-        spawnWave(0)
+        buildStoryEnts(1, 0, intArrayOf(mySkin), listOf(myName))
         mode = Mode.PLAY
         paused = false
-        camX = p.x - 300f; camY = p.y - 300f
+        beginStoryRun()
+        camX = player.x - 300f; camY = player.y - 300f
         updateCam(0f, true)
     }
 
-    private fun addEnemy(x: Float, y: Float, hp: Float, sc: Float, dk: String, gun: String): Ent {
-        var si = Random.nextInt(SKINS.size)
-        if (si == mySkin) si = (si + 1) % SKINS.size
-        val e = Ent(ents.size, SKINS[si], 1)
-        e.human = false; e.bot = true
-        e.name = BOT_NAMES[Random.nextInt(BOT_NAMES.size)]
+    /** Back to the very first wave on the main map, everybody fresh. */
+    private fun beginStoryRun() {
+        loadMap(0)
+        parts.clear(); texts.clear()
+        for (e in ents) {
+            if (e.human) {
+                e.hp = 100f; e.fuel = 100f; e.alive = true; e.inv = 2f; e.empty = false
+                e.wps[0] = "pistol"; e.wps[1] = null; e.ammos[0] = WEAPONS.getValue("pistol").mag; e.ammos[1] = 0; e.cur = 0
+                e.reload = 0f; e.cool = .3f; e.hurt = 0f; e.grenades = 3; e.gCool = 0f
+                e.kills = 0; e.deaths = 0; e.vx = 0f; e.vy = 0f
+            } else {
+                e.alive = false; e.boss = false; e.sc = 1f
+            }
+        }
+        matchTime = 0f; winId = -1; winTeam = -1
+        storyWave = 0
+        spawnWave(0)
+    }
+
+    private fun addEnemy(x: Float, y: Float, hp: Float, sc: Float, dk: String, gun: String): Ent? {
+        var e: Ent? = null
+        for (c in ents) if (c.bot && !c.alive) { e = c; break }
+        if (e == null) return null
+        e.skin = SKINS[Random.nextInt(SKINS.size)]
+        e.boss = false; e.bState = 0; e.bT = 0f; e.bCd = 2.5f; e.bShots = 0; e.bHit = 0f; e.s1 = false; e.s2 = false
+        e.tg = null; e.goal = null; e.seenT = 0f; e.restT = 0f; e.stuck = 0f
         e.dk = dk; e.maxHp = hp; e.hp = hp; e.sc = sc
-        e.x = x; e.y = y; e.tx = x; e.ty = y
-        e.fuel = 100f; e.alive = true; e.inv = 1.5f
-        e.wps[0] = gun; e.ammos[0] = WEAPONS.getValue(gun).mag; e.cur = 0
+        e.x = x; e.y = y; e.tx = x; e.ty = y; e.vx = 0f; e.vy = 0f; e.tvx = 0f; e.tvy = 0f
+        e.fuel = 100f; e.empty = false; e.alive = true; e.inv = 1.5f; e.hurt = 0f; e.reload = 0f
+        e.wps[0] = gun; e.wps[1] = null; e.ammos[0] = WEAPONS.getValue(gun).mag; e.ammos[1] = 0; e.cur = 0
         e.grenades = 0
-        e.aim = if (x < player.x) 0f else PI_F
+        e.aim = if (x < leadHuman().x) 0f else PI_F
         e.taim = e.aim
-        ents.add(e)
         return e
     }
 
     private fun spawnWave(w: Int) {
-        while (ents.size > 1) ents.removeAt(ents.size - 1)
         bullets.clear(); grenades.clear(); texts.clear()
+        for (e in ents) if (e.bot) { e.alive = false; e.boss = false }
         storyWave = w; storyState = 0; pendingSummon = 0
+        if (w >= 4) { enterBossStage(); return }
         val sp = waveSpecs[w]
-        val p = player
+        var i = 0
+        for (p in ents) {
+            if (!p.human) continue
+            p.x = sp.px + (i - (humans - 1) / 2f) * 46f; p.y = sp.py
+            p.vx = 0f; p.vy = 0f; p.tx = p.x; p.ty = p.y; p.tvx = 0f; p.tvy = 0f
+            if (w > 0) reviveAndSupply(p)
+            i++
+        }
         if (w > 0) {
-            p.x = sp.px; p.y = sp.py; p.vx = 0f; p.vy = 0f; p.tx = p.x; p.ty = p.y; p.tvx = 0f; p.tvy = 0f
-            p.hp = min(100f, p.hp + 40f); p.fuel = 100f; p.empty = false; p.inv = 2.5f
-            p.grenades = min(5, p.grenades + 2); p.reload = 0f
-            for (i in 0..1) { val k = p.wps[i]; if (k != null) p.ammos[i] = WEAPONS.getValue(k).mag }
             for (pk in picks) pk.cd = 0f
-            for (i in 0 until 10) emit(EV_SPARK, p.x + rnd(-30f, 30f), p.y - rnd(0f, 60f), 0f, 0f)
+            for (p in ents) if (p.human) for (k in 0 until 10) emit(EV_SPARK, p.x + rnd(-30f, 30f), p.y - rnd(0f, 60f), 0f, 0f)
         }
+        val lead = leadHuman()
         val pool = ArrayList<FloatArray>()
-        for (s in SPAWNS) if (s[1] >= sp.minY && s[1] <= sp.maxY && hypot(s[0] - p.x, s[1] - p.y) > 450f) pool.add(s)
-        if (pool.isEmpty()) for (s in SPAWNS) if (hypot(s[0] - p.x, s[1] - p.y) > 450f) pool.add(s)
-        if (w <= 3) {
-            for (i in 0 until sp.n) {
-                val s = pool[Random.nextInt(pool.size)]
-                addEnemy(s[0] + rnd(-30f, 30f), s[1], sp.hp, sp.sc, sp.dk, sp.guns[Random.nextInt(sp.guns.size)])
-            }
-        } else {
-            val b = addEnemy(2432f, 452f, sp.hp, sp.sc, sp.dk, "smg")
-            b.boss = true; b.skin = BOSS_SKIN; b.name = "OVERLORD"
+        for (s in SPAWNS) if (s[1] >= sp.minY && s[1] <= sp.maxY && hypot(s[0] - lead.x, s[1] - lead.y) > 450f) pool.add(s)
+        if (pool.isEmpty()) for (s in SPAWNS) if (hypot(s[0] - lead.x, s[1] - lead.y) > 450f) pool.add(s)
+        val count = Math.round(sp.n * coopScale())
+        for (k in 0 until count) {
+            val s = pool[Random.nextInt(pool.size)]
+            addEnemy(s[0] + rnd(-30f, 30f), s[1], sp.hp, sp.sc, sp.dk, sp.guns[Random.nextInt(sp.guns.size)])
         }
-        banner = if (w == 4) "FINAL STAGE" else "WAVE ${w + 1}"
+        banner = "WAVE ${w + 1}"
         bannerT = 2.8f
         updateCam(0f, true)
     }
 
+    private fun reviveAndSupply(p: Ent) {
+        if (!p.alive) { p.alive = true; p.hp = 60f } else p.hp = min(100f, p.hp + 40f)
+        p.fuel = 100f; p.empty = false; p.inv = 2.5f
+        p.grenades = min(5, p.grenades + 2); p.reload = 0f
+        for (i in 0..1) { val k = p.wps[i]; if (k != null) p.ammos[i] = WEAPONS.getValue(k).mag }
+    }
+
+    /** Everyone is teleported to the boss arena and the Overlord appears. */
+    private fun enterBossStage() {
+        for (p in ents) if (p.human && p.alive) emit(EV_TELE, p.x, p.y - 20f, 0f, 0f)
+        loadMap(1)
+        var i = 0
+        for (p in ents) {
+            if (!p.human) continue
+            p.x = 360f + i * 90f; p.y = 1026f
+            p.vx = 0f; p.vy = 0f; p.tx = p.x; p.ty = p.y; p.tvx = 0f; p.tvy = 0f
+            reviveAndSupply(p)
+            p.inv = 3f
+            emit(EV_TELE, p.x, p.y - 20f, 0f, 0f)
+            i++
+        }
+        val sp = waveSpecs[4]
+        val b = addEnemy(1960f, 1026f, sp.hp * coopScale(), sp.sc, sp.dk, "smg")
+        if (b != null) { b.boss = true; b.skin = BOSS_SKIN; b.name = "OVERLORD" }
+        banner = "FINAL STAGE"
+        bannerT = 3f
+        updateCam(0f, true)
+    }
+
     private fun summonMinions(n: Int) {
+        val lead = leadHuman()
         for (i in 0 until n) {
             val s = SPAWNS[Random.nextInt(SPAWNS.size)]
-            if (s[1] > 520f || hypot(s[0] - player.x, s[1] - player.y) < 350f) continue
+            if (mapId == 0 && s[1] > 520f) continue
+            if (hypot(s[0] - lead.x, s[1] - lead.y) < 350f) continue
             addEnemy(s[0], s[1], 60f, .9f, "normal", if (Random.nextBoolean()) "pistol" else "smg")
         }
     }
@@ -569,7 +650,9 @@ class Game {
     private fun storyTick(dt: Float) {
         if (rules != Rules.STORY || mode != Mode.PLAY) return
         if (bannerT > 0f) bannerT -= dt
-        if (!player.alive && storyState != 2) {
+        var anyAlive = false
+        for (e in ents) if (e.human && e.alive) { anyAlive = true; break }
+        if (!anyAlive && storyState != 2) {
             storyState = 2; storyT = 3.4f; banner = "YOU DIED"; bannerT = 3.4f
         }
         when (storyState) {
@@ -582,7 +665,9 @@ class Game {
                     if (storyWave >= 4) {
                         mode = Mode.OVER; winId = 0; winTeam = 0; paused = false
                     } else {
-                        storyState = 1; storyT = 3f; banner = "WAVE CLEARED"; bannerT = 3f
+                        storyState = 1; storyT = 3f
+                        banner = if (storyWave == 3) "TELEPORTING TO THE ARENA" else "WAVE CLEARED"
+                        bannerT = 3f
                     }
                 }
             }
@@ -592,7 +677,7 @@ class Game {
             }
             2 -> {
                 storyT -= dt
-                if (storyT <= 0f) startStory()
+                if (storyT <= 0f) beginStoryRun()
             }
         }
     }
@@ -606,12 +691,15 @@ class Game {
     }
 
     private fun bossThink(e: Ent, dt: Float) {
-        val tg = player
-        e.tg = tg
+        var tgN: Ent? = null
+        var tgD = 1e9f
+        for (o in ents) if (o.human && o.alive) { val dd = hypot(o.x - e.x, o.y - e.y); if (dd < tgD) { tgD = dd; tgN = o } }
         e.fuel = max(e.fuel, 60f)
         e.ammos[0] = 40
         e.fire = false
-        if (!tg.alive) { e.mx = 0f; e.jet = false; return }
+        if (tgN == null) { e.tg = null; e.mx = 0f; e.jet = false; return }
+        val tg: Ent = tgN
+        e.tg = tg
         val dx = tg.x - e.x
         val dy = (tg.y - 24f) - (e.y - 28f * e.sc)
         e.dist = hypot(dx, dy)
@@ -857,6 +945,10 @@ class Game {
             }
             EV_SPARK -> burst(x, y, 0xFFFFE08A.toInt(), 5, 200f, 300f)
             EV_THROW -> snd("reload", x, y)
+            EV_TELE -> {
+                for (k in 0 until 26) part(x + rnd(-26f, 26f), y + rnd(-50f, 40f), rnd(-70f, 70f), rnd(-240f, -40f), .9f, rnd(3f, 8f), 0xFFAEEBFF.toInt(), -40f, false)
+                shake = max(shake, 7f)
+            }
         }
     }
 
@@ -1363,6 +1455,8 @@ class Game {
         o.writeByte(winId)
         o.writeByte(winTeam)
         o.writeFloat(matchTime)
+        o.writeByte(mapId); o.writeByte(storyWave); o.writeByte(storyState)
+        o.writeFloat(bannerT); o.writeUTF(banner)
         o.writeByte(ents.size)
         for (e in ents) {
             o.writeByte(e.id)
@@ -1378,6 +1472,10 @@ class Game {
             o.writeShort(e.kills); o.writeShort(e.deaths)
             o.writeByte(e.grenades)
             o.writeFloat(e.respawn)
+            o.writeByte(if (e.boss) 255 else max(0, SKINS.indexOf(e.skin)))
+            o.writeByte((e.sc * 50f).toInt().coerceIn(1, 255))
+            o.writeShort(e.maxHp.toInt())
+            o.writeByte(if (e.boss) 1 else 0)
         }
         o.writeByte(picks.size)
         for (p in picks) o.writeFloat(p.cd)
@@ -1407,6 +1505,12 @@ class Game {
         val wid = d.readByte().toInt()
         val wt = d.readByte().toInt()
         matchTime = d.readFloat()
+        val mid = d.readUnsignedByte()
+        val sw = d.readUnsignedByte(); val ss = d.readUnsignedByte()
+        val bt = d.readFloat(); val bn = d.readUTF()
+        val mapChanged = mid != mapId
+        if (mapChanged) loadMap(mid)
+        storyWave = sw; storyState = ss; bannerT = bt; banner = bn
         val n = d.readUnsignedByte()
         for (k in 0 until n) {
             val id = d.readUnsignedByte()
@@ -1421,7 +1525,15 @@ class Game {
             val kills = d.readShort().toInt(); val deaths = d.readShort().toInt()
             val gr = d.readUnsignedByte()
             val resp = d.readFloat()
+            val skI = d.readUnsignedByte(); val scB = d.readUnsignedByte(); val mhp = d.readShort().toInt(); val bossB = d.readUnsignedByte()
             val e = ents.getOrNull(id) ?: continue
+            e.sc = scB / 50f; e.maxHp = mhp.toFloat()
+            e.boss = bossB == 1
+            if (e.boss) { e.skin = BOSS_SKIN; e.name = "OVERLORD" }
+            else {
+                if (skI < SKINS.size) e.skin = SKINS[skI]
+                if (e.bot) e.name = BOT_NAMES[e.id % BOT_NAMES.size]
+            }
             val wasAlive = e.alive
             e.alive = (fl and 1) != 0
             e.hp = hp; e.inv = inv; e.cur = cur.coerceIn(0, 1)
@@ -1475,6 +1587,7 @@ class Game {
             val ex = d.readFloat(); val ey = d.readFloat(); val ea = d.readFloat(); val eb = d.readFloat()
             applyEvent(typ, ex, ey, ea, eb)
         }
+        if (mapChanged) updateCam(0f, true)
         if (state == 1 && mode == Mode.PLAY) {
             mode = Mode.OVER
             winId = wid
@@ -1538,14 +1651,14 @@ class Game {
                     MSG_WELCOME -> {
                         lobbyHumans = d.readUnsignedByte()
                         val r = d.readUnsignedByte()
-                        menuRules = if (r == 0) Rules.TEAM else Rules.SOLO
+                        menuRules = Rules.values().getOrElse(r) { Rules.TEAM }
                         diff = DIFF_KEYS.getOrElse(d.readUnsignedByte()) { "normal" }
                         mode = Mode.WAIT
                     }
                     MSG_LOBBY -> {
                         lobbyHumans = d.readUnsignedByte()
                         val r = d.readUnsignedByte()
-                        menuRules = if (r == 0) Rules.TEAM else Rules.SOLO
+                        menuRules = Rules.values().getOrElse(r) { Rules.TEAM }
                         diff = DIFF_KEYS.getOrElse(d.readUnsignedByte()) { "normal" }
                     }
                     MSG_START -> {
@@ -1557,7 +1670,15 @@ class Game {
                         val sk = IntArray(hc)
                         val nm = ArrayList<String>()
                         for (k in 0 until hc) { sk[k] = d.readUnsignedByte(); nm.add(d.readUTF()) }
-                        buildEnts(if (r == 0) Rules.TEAM else Rules.SOLO, hc, id, sk, nm)
+                        val rl = Rules.values().getOrElse(r) { Rules.TEAM }
+                        if (rl == Rules.STORY) {
+                            buildStoryEnts(hc, id, sk, nm)
+                            loadMap(0)
+                            storyWave = 0; storyState = 0; banner = ""; bannerT = 0f
+                            camX = player.x - 300f; camY = player.y - 300f
+                        } else {
+                            buildEnts(rl, hc, id, sk, nm)
+                        }
                         mode = Mode.PLAY
                         paused = false
                         reqG = 0; reqS = 0; reqSV = 0; reqR = 0; reqP = 0
