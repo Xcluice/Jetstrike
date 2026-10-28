@@ -52,7 +52,35 @@ fun angDiff(a: Float, b: Float): Float {
 
 class Plat(val x: Float, val y: Float, val w: Float, val h: Float, val wall: Boolean = false)
 
-class Skin(val name: String, hex: String, hexD: String, hexL: String, val acc: Int = 0) {
+/**
+ * One playable character: its abilities and its body proportions.
+ * Body numbers are in sprite units with the feet at y = 0 (the old shared soldier was tw 9.5, th 21, hip 17, hr 12.5).
+ */
+class Hero(
+    val role: String, val line1: String, val line2: String,
+    // abilities
+    val hp: Float = 100f, val dmg: Float = 1f, val armor: Float = 0f, val spd: Float = 1f,
+    val fuelUse: Float = 1f, val fuelReg: Float = 1f,
+    val regen: Float = 0f, val regenDelay: Float = 3f, val leech: Float = 0f,
+    val reload: Float = 1f, val rage: Float = 0f, val longDmg: Float = 0f,
+    // body
+    val scale: Float = 1f, val tw: Float = 9.5f, val th: Float = 21f, val hip: Float = 17f,
+    val hr: Float = 12.5f, val limb: Float = 1f, val rad: Float = 6f, val pack: Float = 1f,
+    val squareHead: Boolean = false
+) {
+    val torsoBot: Float get() = hip - 3f
+    val torsoTop: Float get() = torsoBot + th
+    val shoulder: Float get() = torsoTop - 8f
+    val headCy: Float get() = torsoTop + hr * .56f
+    val top: Float get() = headCy + hr
+    /** Half width and height of the area bullets can hit, so fat heroes are easier to hit and slim ones harder. */
+    val hitW: Float get() = (tw + 4.5f) * scale
+    val hitH: Float get() = top * scale
+}
+
+val NEUTRAL_HERO = Hero("", "", "")
+
+class Skin(val name: String, hex: String, hexD: String, hexL: String, val acc: Int = 0, val h: Hero = NEUTRAL_HERO) {
     val c: Int = Color.parseColor(hex)
     val d: Int = Color.parseColor(hexD)
     val l: Int = Color.parseColor(hexL)
@@ -148,6 +176,10 @@ class Ent(val id: Int, var skin: Skin, val team: Int) {
     var bHit = 0f
     var s1 = false
     var s2 = false
+    // hero abilities
+    var sinceHit = 99f
+    var regenAcc = 0f
+    var leechAcc = 0f
 }
 
 class Bullet(
@@ -187,14 +219,37 @@ val SPAWNS: List<FloatArray> get() = Terrain.spawns
 val PICK_DEF: List<Triple<String, Float, Float>> get() = Terrain.picks
 
 val SKINS: List<Skin> = listOf(
-    Skin("Nova", "#19e3c8", "#0b8f86", "#a6fff1", 0),
-    Skin("Blaze", "#ff8a3d", "#b34a12", "#ffd3ae", 1),
-    Skin("Frost", "#7cc8ff", "#2a6fae", "#dff2ff", 2),
-    Skin("Viper", "#7ee05c", "#2f8a22", "#d6ffc2", 3),
-    Skin("Sol", "#ffd23f", "#a67c00", "#fff2ae", 4),
-    Skin("Bloom", "#ff6b9a", "#a3305a", "#ffc7da", 5),
-    Skin("Onyx", "#6f8296", "#2f3d4b", "#c4d3e0", 6),
-    Skin("Rust", "#c97b4a", "#6a3a1a", "#f0c9a6", 7)
+    Skin("Nova", "#19e3c8", "#0b8f86", "#a6fff1", 0, Hero(
+        "SCOUT", "Efficient jetpack, quick reload", "Balanced all-rounder",
+        hp = 100f, fuelUse = .75f, reload = .85f)),
+    Skin("Blaze", "#ff8a3d", "#b34a12", "#ffd3ae", 1, Hero(
+        "BRUISER", "+30% damage, slower reload", "Broad and tough to miss",
+        hp = 90f, dmg = 1.3f, reload = 1.1f,
+        tw = 12.5f, th = 22f, hip = 14f, hr = 11f, limb = 1.25f, rad = 4f, squareHead = true)),
+    Skin("Frost", "#7cc8ff", "#2a6fae", "#dff2ff", 2, Hero(
+        "TANK", "150 HP, takes 25% less damage", "Slow and heavy, big target",
+        hp = 150f, armor = .25f, spd = .88f, fuelUse = 1.3f,
+        scale = 1.1f, tw = 13.5f, th = 24f, hip = 15f, hr = 12f, limb = 1.4f, rad = 3f, squareHead = true)),
+    Skin("Viper", "#7ee05c", "#2f8a22", "#d6ffc2", 3, Hero(
+        "ASSASSIN", "Fast, heals 25% of damage dealt", "Fragile, hard to hit",
+        hp = 80f, dmg = 1.1f, spd = 1.18f, leech = .25f,
+        tw = 6.8f, th = 24f, hip = 23f, hr = 10f, limb = .75f, rad = 5f)),
+    Skin("Sol", "#ffd23f", "#a67c00", "#fff2ae", 4, Hero(
+        "MEDIC", "Regenerates 5 HP/s out of combat", "Slightly weaker shots",
+        hp = 110f, dmg = .9f, regen = 5f, regenDelay = 3f,
+        tw = 11.5f, th = 19f, hip = 14f, hr = 14f, limb = 1.1f, rad = 9f)),
+    Skin("Bloom", "#ff6b9a", "#a3305a", "#ffc7da", 5, Hero(
+        "PILOT", "Jetpack uses half the fuel, refills fast", "Tiny target, fast mover",
+        hp = 85f, spd = 1.08f, fuelUse = .45f, fuelReg = 2.2f,
+        scale = .85f, tw = 9f, th = 17f, hip = 13f, hr = 13.5f, limb = .9f, rad = 7f, pack = 1.5f)),
+    Skin("Onyx", "#6f8296", "#2f3d4b", "#c4d3e0", 6, Hero(
+        "MARKSMAN", "+55% damage with Sniper and Laser", "Light armor, lean frame",
+        hp = 90f, dmg = 1.1f, armor = .1f, longDmg = .45f,
+        tw = 8.5f, th = 25f, hip = 20f, hr = 11f, limb = .85f, rad = 1.5f, squareHead = true)),
+    Skin("Rust", "#c97b4a", "#6a3a1a", "#f0c9a6", 7, Hero(
+        "BERSERKER", "Hits up to 80% harder as health drops", "Sturdy, a little quicker",
+        hp = 105f, spd = 1.05f, rage = .8f,
+        tw = 11f, th = 20f, hip = 18f, hr = 13f, limb = 1.2f, rad = 5f))
 )
 
 val BOSS_SKIN = Skin("Overlord", "#8a3040", "#43151f", "#eaa3ad", 8)
@@ -450,7 +505,8 @@ class Game {
         }
         e.x = best[0]; e.y = best[1]; e.vx = 0f; e.vy = 0f
         e.tx = e.x; e.ty = e.y; e.tvx = 0f; e.tvy = 0f
-        e.hp = 100f; e.fuel = 100f; e.empty = false; e.alive = true; e.inv = 2f
+        e.maxHp = e.skin.h.hp; e.hp = e.maxHp; e.sinceHit = 99f; e.regenAcc = 0f; e.leechAcc = 0f
+        e.fuel = 100f; e.empty = false; e.alive = true; e.inv = 2f
         e.wps[0] = "pistol"; e.wps[1] = null; e.ammos[0] = WEAPONS.getValue("pistol").mag; e.ammos[1] = 0; e.cur = 0
         e.reload = 0f; e.cool = .3f; e.hurt = 0f; e.grenades = 3; e.gCool = 0f
         e.aim = if (e.x < WORLD_W / 2f) 0f else PI_F
@@ -546,7 +602,8 @@ class Game {
         parts.clear(); texts.clear()
         for (e in ents) {
             if (e.human) {
-                e.hp = 100f; e.fuel = 100f; e.alive = true; e.inv = 2f; e.empty = false
+                e.maxHp = e.skin.h.hp; e.hp = e.maxHp; e.sinceHit = 99f; e.regenAcc = 0f; e.leechAcc = 0f
+                e.fuel = 100f; e.alive = true; e.inv = 2f; e.empty = false
                 e.wps[0] = "pistol"; e.wps[1] = null; e.ammos[0] = WEAPONS.getValue("pistol").mag; e.ammos[1] = 0; e.cur = 0
                 e.reload = 0f; e.cool = .3f; e.hurt = 0f; e.grenades = 3; e.gCool = 0f
                 e.kills = 0; e.deaths = 0; e.vx = 0f; e.vy = 0f
@@ -566,7 +623,7 @@ class Game {
         e.skin = SKINS[Random.nextInt(SKINS.size)]
         e.boss = false; e.bState = 0; e.bT = 0f; e.bCd = 2.5f; e.bShots = 0; e.bHit = 0f; e.s1 = false; e.s2 = false
         e.tg = null; e.goal = null; e.seenT = 0f; e.restT = 0f; e.stuck = 0f
-        e.dk = dk; e.maxHp = hp; e.hp = hp; e.sc = sc
+        e.dk = dk; e.maxHp = hp; e.hp = hp; e.sc = sc; e.sinceHit = 99f; e.regenAcc = 0f; e.leechAcc = 0f
         e.x = x; e.y = y; e.tx = x; e.ty = y; e.vx = 0f; e.vy = 0f; e.tvx = 0f; e.tvy = 0f
         e.fuel = 100f; e.empty = false; e.alive = true; e.inv = 1.5f; e.hurt = 0f; e.reload = 0f
         e.wps[0] = gun; e.wps[1] = null; e.ammos[0] = WEAPONS.getValue(gun).mag; e.ammos[1] = 0; e.cur = 0
@@ -609,7 +666,7 @@ class Game {
     }
 
     private fun reviveAndSupply(p: Ent) {
-        if (!p.alive) { p.alive = true; p.hp = 60f } else p.hp = min(100f, p.hp + 40f)
+        if (!p.alive) { p.alive = true; p.hp = p.maxHp * .6f } else p.hp = min(p.maxHp, p.hp + p.maxHp * .4f)
         p.fuel = 100f; p.empty = false; p.inv = 2.5f
         p.grenades = min(5, p.grenades + 2); p.reload = 0f
         for (i in 0..1) { val k = p.wps[i]; if (k != null) p.ammos[i] = WEAPONS.getValue(k).mag }
@@ -907,7 +964,7 @@ class Game {
                     e.flash = .06f
                     val w = WEAPONS.getValue(WEAPON_KEYS[b.toInt().coerceIn(0, WEAPON_KEYS.size - 1)])
                     val mxp = e.x + cos(e.aim) * (w.len + 8f)
-                    val myp = e.y - 28f + sin(e.aim) * (w.len + 8f)
+                    val myp = e.y - shoulderY(e) + sin(e.aim) * (w.len + 8f)
                     for (k in 0 until 3) {
                         part(mxp, myp, cos(e.aim) * rnd(80f, 260f) + rnd(-60f, 60f), sin(e.aim) * rnd(80f, 260f) + rnd(-60f, 60f),
                             .14f, rnd(2f, 4f), 0xFFFFE08A.toInt(), 0f, true)
@@ -1008,7 +1065,8 @@ class Game {
 
     /** Movement, jetpack and gravity. Shared by the host simulation and client-side prediction. */
     private fun movePhysics(e: Ent, dt: Float) {
-        val tv = e.mx * SPEED
+        val hero = e.skin.h
+        val tv = e.mx * SPEED * hero.spd
         val acc = if (e.onG) 2600f else 1200f
         if (e.vx < tv) e.vx = min(tv, e.vx + acc * dt) else if (e.vx > tv) e.vx = max(tv, e.vx - acc * dt)
         if (e.fuel <= 0f) e.empty = true
@@ -1019,9 +1077,9 @@ class Game {
             if (e.onG && e.vy >= 0f) e.vy = -170f
             e.vy -= 2900f * dt
             if (e.vy < -340f) e.vy = -340f
-            e.fuel = max(0f, e.fuel - 30f * dt)
+            e.fuel = max(0f, e.fuel - 30f * hero.fuelUse * dt)
         } else {
-            e.fuel = min(100f, e.fuel + (if (e.onG) 32f else 6f) * dt)
+            e.fuel = min(100f, e.fuel + (if (e.onG) 32f else 6f) * hero.fuelReg * dt)
         }
         e.vy += GRAV * dt
         if (e.vy > 900f) e.vy = 900f
@@ -1031,8 +1089,11 @@ class Game {
 
     private fun jetFx(e: Ent) {
         val dirj = if (cos(e.aim) >= 0f) 1f else -1f
+        val jh = e.skin.h
+        val jx = (jh.tw - 2.5f + 5f * jh.pack) * jh.scale
+        val jy = (jh.torsoBot - 3f) * jh.scale
         for (k in 0 until 2) {
-            part(e.x - dirj * 10f + rnd(-2f, 2f), e.y - 12f, rnd(-40f, 40f), rnd(180f, 320f) + e.vy * .1f,
+            part(e.x - dirj * jx + rnd(-2f, 2f), e.y - jy, rnd(-40f, 40f), rnd(180f, 320f) + e.vy * .1f,
                 rnd(.22f, .4f), rnd(3f, 6.5f), if (k == 1) 0xFFFFD35C.toInt() else 0xFFFF8A3D.toInt(), 0f, true)
         }
     }
@@ -1090,8 +1151,23 @@ class Game {
     private fun startReload(e: Ent) {
         val w = WEAPONS.getValue(e.wp)
         if (!e.alive || e.reload > 0f || e.ammo >= w.mag) return
-        e.reload = w.rel
+        e.reload = w.rel * e.skin.h.reload
         snd("reload", e.x, e.y)
+    }
+
+    /** Height of the shoulder (where shots and grenades leave) above the feet, for this character's body. */
+    fun shoulderY(e: Ent): Float = (e.skin.h.shoulder + 1f) * e.skin.h.scale * e.sc
+
+    /** Outgoing damage multiplier from the character's abilities. [wk] is the weapon key, or "gren". */
+    private fun outMul(e: Ent, wk: String): Float {
+        val h = e.skin.h
+        var m = h.dmg
+        if (h.longDmg > 0f && (wk == "sniper" || wk == "laser")) m += h.longDmg
+        if (h.rage > 0f && e.maxHp > 0f) {
+            val low = ((.6f - e.hp / e.maxHp) / .6f).coerceIn(0f, 1f)
+            m *= 1f + h.rage * low
+        }
+        return m
     }
 
     private fun tryFire(e: Ent) {
@@ -1100,13 +1176,14 @@ class Game {
         if (e.ammo <= 0) { startReload(e); return }
         e.cool = w.rate * (if (e.bot) 1.4f else 1f); e.ammo--
         val sx = e.x
-        val sy = e.y - 28f * e.sc
+        val sy = e.y - shoulderY(e)
+        val dmgMul = outMul(e, w.key)
         val mxp = sx + cos(e.aim) * (w.len + 8f)
         val myp = sy + sin(e.aim) * (w.len + 8f)
         for (i in 0 until w.pel) {
             val a = e.aim + (Random.nextFloat() - .5f) * 2f * w.spr
             val sp = w.spd * (if (w.pel > 1) rnd(.85f, 1.05f) else 1f)
-            bullets.add(Bullet(mxp, myp, cos(a) * sp, sin(a) * sp, w.dmg, w.life, e, e.team, w.tr, w.key == "sniper", w.kind, wIdx(w.key)))
+            bullets.add(Bullet(mxp, myp, cos(a) * sp, sin(a) * sp, w.dmg * dmgMul, w.life, e, e.team, w.tr, w.key == "sniper", w.kind, wIdx(w.key)))
         }
         e.vx -= cos(e.aim) * w.rec * .5f
         e.vy -= sin(e.aim) * w.rec * .15f
@@ -1120,7 +1197,7 @@ class Game {
         e.gCool = .6f
         val sp = 540f
         val gx = e.x + cos(e.aim) * 14f
-        val gy = e.y - 28f + sin(e.aim) * 14f
+        val gy = e.y - shoulderY(e) + sin(e.aim) * 14f
         grenades.add(Grenade(gx, gy, cos(e.aim) * sp + e.vx * .5f, sin(e.aim) * sp - 150f + e.vy * .3f, 2f, e.id, e.team))
         emit(EV_THROW, e.x, e.y, 0f, 0f)
     }
@@ -1166,7 +1243,7 @@ class Game {
             val d = hypot(dx, dy)
             if (d < radius) {
                 val f = 1f - d / radius
-                if (owner != null) damage(e, maxDmg * f + 8f, owner, atan2(dy, dx), wi)
+                if (owner != null) damage(e, (maxDmg * f + 8f) * outMul(owner, if (wi == GREN_WI) "gren" else "rocket"), owner, atan2(dy, dx), wi)
                 if (!e.boss) {
                     e.vx += (dx / max(d, 1f)) * 520f * f
                     e.vy += (dy / max(d, 1f)) * 520f * f - 120f * f
@@ -1175,12 +1252,23 @@ class Game {
         }
     }
 
-    private fun damage(e: Ent, dmg: Float, by: Ent, ang: Float, wi: Int) {
+    private fun damage(e: Ent, rawDmg: Float, by: Ent, ang: Float, wi: Int) {
         if (!e.alive || e.inv > 0f || by.team == e.team) return
+        val dmg = rawDmg * (1f - e.skin.h.armor)
+        val before = e.hp
         e.killWi = wi
         e.hp -= dmg
+        e.sinceHit = 0f
         if (!e.boss) e.vx += cos(ang) * dmg * 2.2f
         emit(EV_DMG, e.x, e.y - 52f, dmg, e.id.toFloat())
+        val lk = by.skin.h.leech
+        if (lk > 0f && by.alive && by !== e) {
+            val heal = min(min(dmg, before) * lk, by.maxHp - by.hp)
+            if (heal > 0f) {
+                by.hp += heal; by.leechAcc += heal
+                if (by.leechAcc >= 4f) { emit(EV_HEAL, by.x, by.y - 52f, by.leechAcc, by.id.toFloat()); by.leechAcc = 0f }
+            }
+        }
         if (e.hp <= 0f) die(e, by)
     }
 
@@ -1267,7 +1355,7 @@ class Game {
             e.los = if (tg != null) los(e.x, e.y - 28f, tg.x, tg.y - 24f) else false
             e.goal = null
             if (rules == Rules.STORY) e.goal = null
-            else if (e.hp < 50f) e.goal = nearPick(e, true)
+            else if (e.hp < e.maxHp * .5f) e.goal = nearPick(e, true)
             else if (e.wp == "pistol" && e.wps[1] == null && (tg == null || bd > 260f || !e.los)) e.goal = nearPick(e, false)
             var mx = 0f
             var jet = false
@@ -1330,6 +1418,13 @@ class Game {
         }
         e.inv = max(0f, e.inv - dt); e.hurt = max(0f, e.hurt - dt); e.cool -= dt; e.flash = max(0f, e.flash - dt)
         e.gCool -= dt
+        e.sinceHit += dt
+        val rh = e.skin.h
+        if (rh.regen > 0f && e.sinceHit >= rh.regenDelay && e.hp < e.maxHp) {
+            val add = min(rh.regen * dt, e.maxHp - e.hp)
+            e.hp += add; e.regenAcc += add
+            if (e.regenAcc >= 5f) { emit(EV_HEAL, e.x, e.y - 52f, e.regenAcc, e.id.toFloat()); e.regenAcc = 0f }
+        }
         if (e.boss) bossThink(e, dt) else if (e.bot) botThink(e, dt)
         movePhysics(e, dt)
         // anyone who slips out below the island is out of the match for a moment
@@ -1350,9 +1445,9 @@ class Game {
             if (abs(e.x - p.x) < 26f && p.y > e.y - 50f && p.y < e.y + 10f) {
                 var took = true
                 if (p.t == "health") {
-                    if (e.hp >= 100f) took = false
+                    if (e.hp >= e.maxHp) took = false
                     else {
-                        val h = min(45f, 100f - e.hp)
+                        val h = min(45f, e.maxHp - e.hp)
                         e.hp += h
                         emit(EV_HEAL, e.x, e.y - 52f, h, e.id.toFloat())
                     }
@@ -1389,7 +1484,8 @@ class Game {
                 if (!dead) {
                     for (e in ents) {
                         if (!e.alive || e.team == b.team) continue
-                        if (abs(b.x - e.x) < 14f * e.sc && b.y > e.y - 54f * e.sc && b.y < e.y + 2f) {
+                        val hh = e.skin.h
+                        if (abs(b.x - e.x) < hh.hitW * e.sc && b.y > e.y - hh.hitH * e.sc && b.y < e.y + 2f) {
                             if (e.inv > 0f) continue
                             val o = b.o
                             if (o != null && b.kind != 1) damage(e, b.dmg, o, atan2(b.vy, b.vx), b.wi)

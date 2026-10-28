@@ -575,15 +575,17 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     }
 
     private fun leg(c: Canvas, e: Ent, ph: Float, col: Int, back: Boolean) {
+        val hero = e.skin.h
         val hx = if (back) -2f else 2f
-        val hy = -17f
+        val hy = -hero.hip
+        val stride = hero.hip / 17f
         val moving = e.onG && abs(e.vx) > 20f
         val fx: Float
         val fy: Float
         if (e.onG && !moving) {
             fx = hx + (if (back) -3f else 3f); fy = 0f
         } else if (e.onG) {
-            fx = sin(ph) * 9f; fy = -max(0f, cos(ph)) * 6f
+            fx = sin(ph) * 9f * stride; fy = -max(0f, cos(ph)) * 6f * stride
         } else if (e.jetting) {
             fx = hx + (if (back) -3f else 2f) + sin(game.t * 14f + (if (back) 1f else 0f)) * 1.5f; fy = -3f
         } else {
@@ -594,11 +596,12 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         path.reset()
         path.moveTo(hx, hy)
         path.quadTo(kx, ky, fx, fy)
-        sp.shader = null; sp.color = OUTLINE; sp.strokeWidth = 10.6f
+        sp.shader = null; sp.color = OUTLINE; sp.strokeWidth = 3f + 7.6f * hero.limb
         c.drawPath(path, sp)
-        sp.color = col; sp.strokeWidth = 7.6f
+        sp.color = col; sp.strokeWidth = 7.6f * hero.limb
         c.drawPath(path, sp)
-        rro(c, fx - 4f, fy - 3f, fx + 6f, fy + 2f, 2.5f, 0xFF1B2C34.toInt())
+        val fw = hero.limb
+        rro(c, fx - 4f * fw, fy - 3f, fx + 6f * fw, fy + 2f, 2.5f, 0xFF1B2C34.toInt())
     }
 
     private fun fin(c: Canvas, x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float, col: Int) {
@@ -643,6 +646,81 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 line(c, 3f, -48f, 8f, -58f, 3.6f, OUTLINE); line(c, 3f, -48f, 8f, -58f, 1.4f, light)
                 circle(c, -9f, -58.5f, 2f, light); circle(c, 8f, -58.5f, 2f, light)
             }
+        }
+    }
+
+    /** Hero specific body gear, drawn on top of the torso. Coordinates are sprite space with feet at y = 0. */
+    private fun bodyGear(c: Canvas, sk: Skin, dark: Int, light: Int) {
+        val h = sk.h
+        val top = -h.torsoTop
+        when (sk.acc) {
+            0 -> { // scout: chest light
+                circle(c, 3f, -(h.torsoBot + h.th * .45f), 2.4f, if (game.t * 3f % 2f < 1f) 0xFFFFFFFF.toInt() else light)
+            }
+            1 -> { // bruiser: spiked pauldrons and wrist bands
+                fin(c, -h.tw + 1f, top + 3f, -h.tw - 1f, top - 8f, -h.tw + 7f, top + 1f, dark)
+                fin(c, h.tw - 7f, top + 1f, h.tw + 1f, top - 9f, h.tw - 1f, top + 3f, dark)
+                rr(c, -h.tw, -(h.torsoBot + 5f), h.tw, -(h.torsoBot + 2f), 0f, light)
+            }
+            2 -> { // tank: heavy chest plate and rivets
+                rro(c, -h.tw + 2f, top + 4f, h.tw - 2f, top + h.th * .72f, 2f, dark)
+                rr(c, -h.tw + 4f, top + 7f, h.tw - 4f, top + 9.5f, 1f, light)
+                circle(c, -h.tw + 5f, top + h.th * .6f, 1.5f, light)
+                circle(c, h.tw - 5f, top + h.th * .6f, 1.5f, light)
+                rro(c, h.tw - 6f, top - 2f, h.tw + 3f, top + 8f, 4f, dark)
+            }
+            3 -> { // assassin: crossed straps and a flowing scarf
+                line(c, -h.tw + 1f, top + 2f, h.tw - 1f, -(h.torsoBot + 4f), 2.6f, dark)
+                val w = sin(game.t * 7f) * 3f
+                path.reset()
+                path.moveTo(-3f, top + 3f); path.quadTo(-16f, top - 1f + w, -26f, top + 8f + w * 1.4f)
+                path.quadTo(-16f, top + 6f, -5f, top + 8f); path.close()
+                sp.shader = null; sp.strokeWidth = 2.4f; sp.color = OUTLINE
+                c.drawPath(path, sp)
+                p.shader = null; p.style = Paint.Style.FILL; p.color = light
+                c.drawPath(path, p)
+            }
+            4 -> { // medic: cross emblem
+                rr(c, -2f, top + 8f, 8f, top + 11f, 1f, light)
+                rr(c, 1.5f, top + 4.5f, 4.5f, top + 14.5f, 1f, light)
+                line(c, -h.tw + 2f, -(h.torsoBot + 3f), h.tw - 2f, -(h.torsoBot + 3f), 2f, light)
+            }
+            5 -> { // pilot: belt buckle and harness
+                line(c, -h.tw + 3f, top + 2f, -h.tw + 3f, -(h.torsoBot + 3f), 2.4f, dark)
+                line(c, h.tw - 3f, top + 2f, h.tw - 3f, -(h.torsoBot + 3f), 2.4f, dark)
+                circle(c, 0f, -(h.torsoBot + h.th * .5f), 2.6f, light)
+            }
+            6 -> { // marksman: angular shoulder blades and a chest diamond
+                fin(c, -h.tw - 1f, top + 5f, -h.tw + 2f, top - 9f, -h.tw + 6f, top + 2f, dark)
+                fin(c, h.tw - 5f, top + 2f, h.tw - 1f, top - 7f, h.tw + 2f, top + 6f, dark)
+                path.reset()
+                val cy = top + h.th * .5f
+                path.moveTo(1f, cy - 5f); path.lineTo(5f, cy); path.lineTo(1f, cy + 5f); path.lineTo(-3f, cy); path.close()
+                p.shader = null; p.style = Paint.Style.FILL; p.color = light
+                c.drawPath(path, p)
+            }
+            7 -> { // berserker: bandolier and one big shoulder plate
+                line(c, -h.tw + 1f, top + 2f, h.tw - 1f, -(h.torsoBot + 3f), 3.6f, OUTLINE)
+                line(c, -h.tw + 1f, top + 2f, h.tw - 1f, -(h.torsoBot + 3f), 2f, dark)
+                for (k in 0..2) circle(c, -4f + k * 4.5f, top + 5f + k * 4.2f, 1.4f, light)
+                rro(c, h.tw - 8f, top - 3f, h.tw + 4f, top + 7f, 5f, dark)
+            }
+        }
+    }
+
+    /** Hero specific head gear, drawn over the head (centre at 1, -headCy). */
+    private fun headGear(c: Canvas, sk: Skin, dark: Int, light: Int) {
+        val h = sk.h
+        val cy = -h.headCy
+        when (sk.acc) {
+            1 -> rr(c, 1f - h.hr * .6f, cy - h.hr + 1.5f, 1f + h.hr * .6f, cy - h.hr + 4.5f, 1f, dark)
+            2 -> { // helmet brow
+                rr(c, 1f - h.hr * .86f, cy - 2f - h.hr * .5f, 1f + h.hr * .86f, cy - h.hr * .5f + 1.5f, 1f, dark)
+            }
+            6 -> { // hood shading over the top
+                rr(c, 1f - h.hr + 1f, cy - h.hr, 1f + h.hr - 1f, cy - h.hr * .45f, 4f, (dark and 0x00FFFFFF) or 0xCC000000.toInt())
+            }
+            7 -> rr(c, 1f - h.hr * .8f, cy - h.hr * .6f, 1f + h.hr * .8f, cy - h.hr * .6f + 2.6f, 0f, light) // headband
         }
     }
 
@@ -702,6 +780,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
     private fun drawSoldier(c: Canvas, e: Ent, tags: Boolean = true) {
         val sk = e.skin
+        val h = sk.h
         val hurt = e.hurt > 0f
         val bodyC = if (hurt) 0xFFFFFFFF.toInt() else sk.c
         val dark = if (hurt) 0xFFE6E6E6.toInt() else sk.d
@@ -714,52 +793,69 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         val team = game.rules == Rules.TEAM
         val ally = e.team == game.player.team
         val teamCol = if (ally) TEAL else RED
+        val tTop = -h.torsoTop
+        val tBot = -h.torsoBot
+        val shY = -h.shoulder
+        val hk = h.hr / 12.5f
+        val armW = 6.6f * h.limb
+        val armLen = 12f + (h.tw - 9.5f) * .5f
 
         if (!blink) {
             c.save()
             c.translate(e.x, e.y)
             if (e.sc != 1f) c.scale(e.sc, e.sc)
-            if (e.onG) oval(c, 0f, 1f, 12f, 3f, 0x38000000)
+            if (h.scale != 1f) c.scale(h.scale, h.scale)
+            if (e.onG) oval(c, 0f, 1f, 12f + (h.tw - 9.5f), 3f, 0x38000000)
             if (team && e.onG) {
                 sp.shader = null; sp.strokeWidth = 2f; sp.color = (0xAA shl 24) or (teamCol and 0x00FFFFFF)
-                rect.set(-15f, -2.5f, 15f, 4.5f)
+                rect.set(-15f - (h.tw - 9.5f), -2.5f, 15f + (h.tw - 9.5f), 4.5f)
                 c.drawOval(rect, sp)
             }
             c.scale(dir, 1f)
             c.translate(0f, -bob)
-            // jetpack
-            rro(c, -17f, -32f, -7f, -11f, 3f, 0xFF3F525C.toInt())
-            rr(c, -16f, -12f, -12.5f, -8f, 1f, 0xFF1B2830.toInt())
-            rr(c, -10.5f, -12f, -7f, -8f, 1f, 0xFF1B2830.toInt())
-            rr(c, -16f, -28f, -8f, -25.5f, 1f, if (e.jetting) 0xFFFFD35C.toInt() else 0xFFFF6F59.toInt())
+            // jetpack, sized to the torso (the pilot carries a bigger one)
+            val px0 = -(h.tw - 2.5f + 10f * h.pack)
+            val px1 = -(h.tw - 2.5f)
+            val pTop = -(h.torsoTop - 3f) - (h.pack - 1f) * 8f
+            val pBot = -(h.torsoBot - 3f)
+            val pc = (px0 + px1) / 2f
+            rro(c, px0, pTop, px1, pBot, 3f, 0xFF3F525C.toInt())
+            if (h.pack > 1.2f) line(c, pc, pTop + 3f, pc, pBot - 3f, 1.4f, 0xFF1B2830.toInt())
+            rr(c, px0 + 1f, pBot - 1f, px0 + 4.5f, pBot + 3f, 1f, 0xFF1B2830.toInt())
+            rr(c, px1 - 3.5f, pBot - 1f, px1, pBot + 3f, 1f, 0xFF1B2830.toInt())
+            rr(c, px0 + 1f, pTop + 4f, px1 - 1f, pTop + 6.5f, 1f, if (e.jetting) 0xFFFFD35C.toInt() else 0xFFFF6F59.toInt())
             if (e.jetting) {
-                val fl = 14f + Math.random().toFloat() * 10f
+                val fl = (14f + Math.random().toFloat() * 10f) * (.8f + h.pack * .2f)
                 path.reset()
-                path.moveTo(-17f, -9f); path.lineTo(-7f, -9f); path.lineTo(-12f, -9f + fl); path.close()
+                path.moveTo(px0, pBot + 2f); path.lineTo(px1, pBot + 2f); path.lineTo(pc, pBot + 2f + fl); path.close()
                 p.shader = null; p.style = Paint.Style.FILL; p.color = 0xE6FF9B3D.toInt()
                 c.drawPath(path, p)
                 path.reset()
-                path.moveTo(-14.5f, -9f); path.lineTo(-9.5f, -9f); path.lineTo(-12f, -9f + fl * .6f); path.close()
+                path.moveTo(pc - 2.5f, pBot + 2f); path.lineTo(pc + 2.5f, pBot + 2f); path.lineTo(pc, pBot + 2f + fl * .6f); path.close()
                 p.color = 0xF2FFF0AA.toInt()
                 c.drawPath(path, p)
             }
             // back leg, back arm, front leg
             leg(c, e, e.run + PI_F, dark, true)
-            line(c, 0f, -27f, 3f + cos(la) * 12f, -27f + sin(la) * 12f, 10f, OUTLINE)
-            line(c, 0f, -27f, 3f + cos(la) * 12f, -27f + sin(la) * 12f, 6.6f, dark)
+            line(c, 0f, shY, 3f + cos(la) * armLen, shY + sin(la) * armLen, 3f + armW, OUTLINE)
+            line(c, 0f, shY, 3f + cos(la) * armLen, shY + sin(la) * armLen, armW, dark)
             leg(c, e, e.run, bodyC, false)
             if (sk.acc == 7) cape(c, dark)
             // torso
-            rro(c, -9.5f, -35f, 9.5f, -14f, 6f, bodyC)
-            rr(c, -9.5f, -21f, 9.5f, -17f, 0f, dark)
-            rr(c, -6f, -33f, 2f, -25f, 3f, (light and 0x00FFFFFF) or 0x99000000.toInt())
+            rro(c, -h.tw, tTop, h.tw, tBot, h.rad, bodyC)
+            rr(c, -h.tw, tBot - 7f, h.tw, tBot - 3f, 0f, dark)
+            rr(c, -h.tw * .63f, tTop + 2f, h.tw * .21f, tTop + 10f, 3f, (light and 0x00FFFFFF) or 0x99000000.toInt())
+            bodyGear(c, sk, dark, light)
             // head
-            circo(c, 1f, -42f, 12.5f, bodyC)
-            circle(c, -2.5f, -47f, 6.5f, (light and 0x00FFFFFF) or 0x99000000.toInt())
-            oval(c, 6.5f, -42f, 7.5f, 5.6f, 0xFF2B8CA3.toInt())
-            oval(c, 6.5f, -41f, 6.4f, 4.1f, 0xFF8FE3F5.toInt())
-            oval(c, 4.5f, -43.8f, 3.4f, 1.6f, 0xBFFFFFFF.toInt())
-            c.save(); c.translate(0f, -3.5f); accessory(c, sk, dark, light); c.restore()
+            val hcy = -h.headCy
+            if (h.squareHead) rro(c, 1f - h.hr * .95f, hcy - h.hr * .92f, 1f + h.hr * .95f, hcy + h.hr * .92f, h.hr * .42f, bodyC)
+            else circo(c, 1f, hcy, h.hr, bodyC)
+            circle(c, -2.5f * hk, hcy - 5f * hk, 6.5f * hk, (light and 0x00FFFFFF) or 0x99000000.toInt())
+            oval(c, 1f + 5.5f * hk, hcy, 7.5f * hk, 5.6f * hk, 0xFF2B8CA3.toInt())
+            oval(c, 1f + 5.5f * hk, hcy + 1f * hk, 6.4f * hk, 4.1f * hk, 0xFF8FE3F5.toInt())
+            oval(c, 1f + 3.5f * hk, hcy - 1.8f * hk, 3.4f * hk, 1.6f * hk, 0xBFFFFFFF.toInt())
+            headGear(c, sk, dark, light)
+            c.save(); c.translate(0f, -3.5f - (h.top - 54.5f)); accessory(c, sk, dark, light); c.restore()
             if (e.boss) {
                 p.shader = null; p.style = Paint.Style.FILL; p.color = 0xFFF2E3C4.toInt()
                 path.reset(); path.moveTo(-8f, -50f); path.lineTo(-13f, -66f); path.lineTo(-2f, -53f); path.close(); c.drawPath(path, p)
@@ -767,20 +863,20 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             }
             // front arm and gun
             c.save()
-            c.translate(1f, -27f)
+            c.translate(1f, shY)
             c.rotate(la * 180f / PI_F)
             c.scale(1.12f, 1.12f)
-            line(c, 0f, 0f, 9f, 0f, 10f, OUTLINE)
-            line(c, 0f, 0f, 9f, 0f, 6.6f, bodyC)
+            line(c, 0f, 0f, 9f, 0f, 3f + armW, OUTLINE)
+            line(c, 0f, 0f, 9f, 0f, armW, bodyC)
             drawGun(c, e)
-            circle(c, 9f, 0f, 2.8f, light)
+            circle(c, 9f, 0f, 2.8f * h.limb.coerceIn(.8f, 1.3f), light)
             c.restore()
             c.restore()
         }
         if (!tags) return
         // marker: your name and an arrow, name and health for everyone else
         c.save()
-        c.translate(e.x, e.y - (e.sc - 1f) * 58f)
+        c.translate(e.x, e.y - (e.sc - 1f) * 58f - (h.top * h.scale - 54.5f) * e.sc)
         if (game.isMe(e)) {
             text(c, game.nameOf(e.id), 0f, -70f, 12f, TEAL, Paint.Align.CENTER, body)
             val yy = -80f + sin(game.t * 4f) * 2f
@@ -798,8 +894,9 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         c.restore()
         if (e.reload > 0f) {
             val w = WEAPONS.getValue(e.wp)
-            rr(c, e.x - 14f, e.y - 62f, e.x + 14f, e.y - 59f, 1.5f, 0x33FFFFFF)
-            rr(c, e.x - 14f, e.y - 62f, e.x - 14f + 28f * (1f - e.reload / w.rel), e.y - 59f, 1.5f, AMBER)
+            val ry = e.y - (h.top * h.scale + 7.5f) * e.sc
+            rr(c, e.x - 14f, ry, e.x + 14f, ry + 3f, 1.5f, 0x33FFFFFF)
+            rr(c, e.x - 14f, ry, e.x - 14f + 28f * (1f - e.reload / (w.rel * h.reload)), ry + 3f, 1.5f, AMBER)
         }
     }
 
@@ -1272,7 +1369,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         val ix = ml + dp(12f)
         val iw = pw - dp(24f)
         statRow(c, "HP", ix, top + dp(20f), iw,
-            pl.hp / 100f, if (pl.hp > 50f) 0xFF5EE06B.toInt() else if (pl.hp > 25f) 0xFFFFD23F.toInt() else RED,
+            pl.hp / pl.maxHp, if (pl.hp > pl.maxHp * .5f) 0xFF5EE06B.toInt() else if (pl.hp > pl.maxHp * .25f) 0xFFFFD23F.toInt() else RED,
             max(0, Math.ceil(pl.hp.toDouble()).toInt()).toString())
         statRow(c, "FUEL", ix, top + dp(42f), iw, pl.fuel / 100f,
             if (pl.empty) 0xFFFF8A3D.toInt() else TEAL, Math.round(pl.fuel).toString())
@@ -1562,10 +1659,12 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 previewEnt.skin = SKINS[g.mySkin]
                 previewEnt.aim = sin(g.t * .9f) * .3f
                 previewEnt.alive = true; previewEnt.onG = true; previewEnt.x = 0f; previewEnt.y = 0f
-                c.save(); c.translate(108f, 204f); c.scale(1.9f, 1.9f)
+                c.save(); c.translate(108f, 206f); c.scale(1.55f, 1.55f)
                 drawSoldier(c, previewEnt, false)
                 c.restore()
-                text(c, SKINS[g.mySkin].name.uppercase(), 104f, 221f, 12f, AMBER, Paint.Align.CENTER, body, .15f)
+                text(c, SKINS[g.mySkin].name.uppercase() + " \u00B7 " + SKINS[g.mySkin].h.role, 104f, 221f, 11f, AMBER, Paint.Align.CENTER, body, .12f)
+                text(c, SKINS[g.mySkin].h.line1, 104f, 87f, 8.5f, WHITE, Paint.Align.CENTER, body, .01f)
+                text(c, SKINS[g.mySkin].h.line2, 104f, 99f, 8f, MUTED, Paint.Align.CENTER, body, .01f)
                 rr(c, 24f, 128f, 50f, 164f, 10f, 0x33000000)
                 rr(c, 158f, 128f, 184f, 164f, 10f, 0x33000000)
                 line(c, 41f, 138f, 33f, 146f, 3f, WHITE); line(c, 33f, 146f, 41f, 154f, 3f, WHITE)

@@ -24,3 +24,19 @@ The bundled key is for sideloading only. Use your own key before publishing to a
 
 ## Story mode
 Offline only. Fight four waves, each on a higher tier of the map; clearing a wave teleports you up. The top tier holds the Overlord, a giant boss with rocket volleys, a flamethrower sweep, a slam and a charge, who also calls reinforcements. Dying restarts from wave 1 with no progress kept.
+
+## Characters
+Each of the 8 fighters has its own body shape and abilities (the old build only recolored one soldier). Pick one on the menu with the arrows.
+
+| Name | Role | Ability | Body |
+|---|---|---|---|
+| Nova | Scout | 25% less jetpack fuel use, 15% faster reload | average |
+| Blaze | Bruiser | +30% damage, 10% slower reload, 90 HP | short, wide, square head |
+| Frost | Tank | 150 HP, takes 25% less damage, 12% slower, heavier jetpack use | big and broad |
+| Viper | Assassin | 18% faster, +10% damage, heals 25% of damage dealt, 80 HP | tall and thin |
+| Sol | Medic | Regenerates 5 HP/s after 3 s without being hit, 110 HP, -10% damage | round with a big head |
+| Bloom | Pilot | Jetpack burns 55% less fuel and refills 2.2x faster, 8% faster, 85 HP | tiny, oversized jetpack |
+| Onyx | Marksman | +55% damage with Sniper and Laser, 10% armor, 90 HP | tall, lean, angular |
+| Rust | Berserker | Up to +80% damage as health drops, 105 HP, 5% faster | stocky with a cape |
+
+Max HP differs per fighter, bullet hit areas follow each body shape (big targets are easier to hit, small ones harder), and bots and story-mode enemies use the same abilities. All of it is in the `Hero` class in `Game.kt`.
