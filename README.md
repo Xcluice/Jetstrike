@@ -21,3 +21,6 @@ The bundled key is for sideloading only. Use your own key before publishing to a
 - **LAN multiplayer**: one phone taps HOST LAN, others tap JOIN LAN on the same Wi-Fi or hotspot. Team mode (up to 3 humans vs 3 bots) or Solo free-for-all (up to 4 humans plus bots).
 - Two weapon slots with a tap-to-swap bar, grenades (players only), floating damage numbers.
 - Sticks only respond on their own pads; dragging anywhere else pans the camera.
+
+## Story mode
+Offline only. Fight four waves, each on a higher tier of the map; clearing a wave teleports you up. The top tier holds the Overlord, a giant boss with rocket volleys, a flamethrower sweep, a slam and a charge, who also calls reinforcements. Dying restarts from wave 1 with no progress kept.

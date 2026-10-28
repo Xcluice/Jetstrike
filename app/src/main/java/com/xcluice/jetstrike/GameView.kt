@@ -191,7 +191,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private var uiOy = 0f
     private val backBtn = Btn("back", 372f, 18f, 448f, 52f)
     private val menuBtns = listOf(
-        Btn("team", 204f, 82f, 328f, 112f), Btn("solo", 334f, 82f, 460f, 112f),
+        Btn("team", 204f, 82f, 290f, 112f), Btn("solo", 296f, 82f, 374f, 112f), Btn("story", 380f, 82f, 460f, 112f),
         Btn("easy", 204f, 134f, 284f, 160f), Btn("normal", 290f, 134f, 374f, 160f), Btn("hard", 380f, 134f, 460f, 160f),
         Btn("offline", 204f, 172f, 460f, 218f),
         Btn("host", 204f, 228f, 284f, 266f), Btn("join", 292f, 228f, 372f, 266f), Btn("ctl", 380f, 228f, 460f, 266f),
@@ -217,7 +217,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         game.net = Net(ctx)
         game.diff = prefs.getString("diff", "normal") ?: "normal"
         if (!DIFFS.containsKey(game.diff)) game.diff = "normal"
-        game.menuRules = if (prefs.getInt("rules", 0) == 1) Rules.SOLO else Rules.TEAM
+        game.menuRules = when (prefs.getInt("rules", 0)) { 1 -> Rules.SOLO; 2 -> Rules.STORY; else -> Rules.TEAM }
         game.sfx = { n, v -> sfx.play(n, v) }
         game.mySkin = prefs.getInt("skin", 0).coerceIn(0, SKINS.size - 1)
         game.myName = (prefs.getString("name", "Player") ?: "Player").take(12)
@@ -698,6 +698,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         if (!blink) {
             c.save()
             c.translate(e.x, e.y)
+            if (e.sc != 1f) c.scale(e.sc, e.sc)
             if (e.onG) oval(c, 0f, 1f, 12f, 3f, 0x38000000)
             if (team && e.onG) {
                 sp.shader = null; sp.strokeWidth = 2f; sp.color = (0xAA shl 24) or (teamCol and 0x00FFFFFF)
@@ -739,6 +740,11 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             oval(c, 6.5f, -41f, 6.4f, 4.1f, 0xFF8FE3F5.toInt())
             oval(c, 4.5f, -43.8f, 3.4f, 1.6f, 0xBFFFFFFF.toInt())
             c.save(); c.translate(0f, -3.5f); accessory(c, sk, dark, light); c.restore()
+            if (e.boss) {
+                p.shader = null; p.style = Paint.Style.FILL; p.color = 0xFFF2E3C4.toInt()
+                path.reset(); path.moveTo(-8f, -50f); path.lineTo(-13f, -66f); path.lineTo(-2f, -53f); path.close(); c.drawPath(path, p)
+                path.reset(); path.moveTo(4f, -53f); path.lineTo(11f, -67f); path.lineTo(10f, -49f); path.close(); c.drawPath(path, p)
+            }
             // front arm and gun
             c.save()
             c.translate(1f, -27f)
@@ -754,7 +760,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         if (!tags) return
         // marker: your name and an arrow, name and health for everyone else
         c.save()
-        c.translate(e.x, e.y)
+        c.translate(e.x, e.y - (e.sc - 1f) * 58f)
         if (game.isMe(e)) {
             text(c, game.nameOf(e.id), 0f, -70f, 12f, TEAL, Paint.Align.CENTER, body)
             val yy = -80f + sin(game.t * 4f) * 2f
@@ -766,8 +772,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             val nameCol = if (team) teamCol else 0xE6FFFFFF.toInt()
             text(c, game.nameOf(e.id), 0f, -74f, 12f, nameCol, Paint.Align.CENTER, body)
             rr(c, -18f, -70f, 18f, -65f, 2.5f, 0x80000000.toInt())
-            val hpCol = if (e.hp > 50f) 0xFF5EE06B.toInt() else if (e.hp > 25f) 0xFFFFD23F.toInt() else RED
-            rr(c, -18f, -70f, -18f + max(0f, 36f * e.hp / 100f), -65f, 2.5f, hpCol)
+            val hpCol = if (e.hp > e.maxHp * .5f) 0xFF5EE06B.toInt() else if (e.hp > e.maxHp * .25f) 0xFFFFD23F.toInt() else RED
+            rr(c, -18f, -70f, -18f + max(0f, 36f * e.hp / e.maxHp), -65f, 2.5f, hpCol)
         }
         c.restore()
         if (e.reload > 0f) {
@@ -1174,8 +1180,34 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         c.drawLine(cx + dp(6f), cy - dp(8f), cx, cy - dp(2f), sp)
     }
 
+    private fun drawStoryHud(c: Canvas, top: Float) {
+        val g = game
+        val w = dp(190f)
+        val x0 = (W - w) / 2f
+        glass(c, x0, top, x0 + w, top + dp(32f), dp(16f), dp(1f))
+        val label = if (g.storyWave >= 4) "FINAL STAGE" else "WAVE ${g.storyWave + 1} / 4"
+        text(c, label, x0 + dp(16f), top + dp(21f), dp(11f), AMBER, Paint.Align.LEFT, fDisplay, .06f)
+        text(c, g.enemiesLeft().toString() + " LEFT", x0 + w - dp(16f), top + dp(21f), dp(11f), WHITE, Paint.Align.RIGHT, body, .08f)
+        val b = g.bossEnt()
+        if (b != null) {
+            val bw = dp(260f)
+            val bx = (W - bw) / 2f
+            val by = top + dp(40f)
+            rr(c, bx, by, bx + bw, by + dp(10f), dp(5f), 0x88000000.toInt())
+            rr(c, bx + dp(1f), by + dp(1f), bx + dp(1f) + max(dp(2f), (bw - dp(2f)) * (b.hp / b.maxHp)), by + dp(9f), dp(4f), RED)
+            text(c, "OVERLORD", W / 2f, by + dp(24f), dp(10f), WHITE, Paint.Align.CENTER, body, .3f)
+        }
+        if (g.bannerT > 0f && g.banner.isNotEmpty()) {
+            val a = (min(1f, g.bannerT * 2f) * 255f).toInt()
+            val bigCol = if (g.banner == "YOU DIED") RED else AMBER
+            text(c, g.banner, W / 2f, H * .36f, dp(34f), (a shl 24) or (bigCol and 0x00FFFFFF), Paint.Align.CENTER, fDisplay, .08f)
+            if (g.banner == "YOU DIED") text(c, "Back to wave 1. No progress is kept.", W / 2f, H * .36f + dp(26f), dp(13f), (a shl 24) or 0xEAF8FB, Paint.Align.CENTER, body, .04f)
+        }
+    }
+
     private fun drawScoreboard(c: Canvas, top: Float) {
         val g = game
+        if (g.rules == Rules.STORY) { drawStoryHud(c, top); return }
         if (g.rules == Rules.TEAM) {
             val mine = g.player.team
             val a = g.teamKills(mine)
@@ -1465,11 +1497,12 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         oval(c, 70f, 45f, 5f, 2.2f, 0xD98FF3FF.toInt())
     }
 
-    private fun rulesText(r: Rules): String = if (r == Rules.TEAM) "TEAM VS BOTS" else "SOLO"
+    private fun rulesText(r: Rules): String = when (r) { Rules.TEAM -> "TEAM VS BOTS"; Rules.SOLO -> "SOLO"; else -> "STORY" }
 
     private fun rulesRow(c: Canvas, tb: Btn, sb: Btn) {
-        btnShape(c, tb, false, "TEAM VS BOTS", game.menuRules == Rules.TEAM)
+        btnShape(c, tb, false, if (tb.r - tb.l > 150f) "TEAM VS BOTS" else "TEAM", game.menuRules == Rules.TEAM)
         btnShape(c, sb, false, "SOLO", game.menuRules == Rules.SOLO)
+        if (tb.r - tb.l <= 150f) btnShape(c, byId(menuBtns, "story"), false, "STORY", game.menuRules == Rules.STORY)
     }
 
     private fun diffRow(c: Canvas, list: List<Btn>) {
@@ -1524,9 +1557,15 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 // play options
                 text(c, "MODE", 204f, 76f, 10f, MUTED, Paint.Align.LEFT, body, .2f)
                 rulesRow(c, byId(menuBtns, "team"), byId(menuBtns, "solo"))
+                text(c, when (g.menuRules) { Rules.TEAM -> "You and friends vs bots"; Rules.SOLO -> "Every fighter for themselves"; else -> "4 waves, then the Overlord" }, 460f, 76f, 10f, AMBER, Paint.Align.RIGHT, body, .04f)
+                if (g.menuRules == Rules.STORY) {
+                    rr(c, 204f, 124f, 460f, 164f, 12f, 0x40000000)
+                    text(c, "Clear each wave to climb to the next tier.", 214f, 140f, 10f, WHITE, Paint.Align.LEFT, body, .02f)
+                    text(c, "Die once and it all restarts from wave 1.", 214f, 156f, 10f, RED, Paint.Align.LEFT, body, .02f)
+                } else
                 text(c, "BOT SKILL", 204f, 128f, 10f, MUTED, Paint.Align.LEFT, body, .2f)
-                diffRow(c, menuBtns)
-                btnShape(c, byId(menuBtns, "offline"), true, "PLAY OFFLINE", false)
+                if (g.menuRules != Rules.STORY) diffRow(c, menuBtns)
+                btnShape(c, byId(menuBtns, "offline"), true, if (g.menuRules == Rules.STORY) "START STORY" else "PLAY OFFLINE", false)
                 smallGhost(c, byId(menuBtns, "host"), "HOST LAN")
                 smallGhost(c, byId(menuBtns, "join"), "JOIN LAN")
                 smallGhost(c, byId(menuBtns, "ctl"), "CONTROLS")
@@ -1576,11 +1615,11 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             }
             Mode.OVER -> {
                 val won = if (g.rules == Rules.TEAM) g.winTeam == g.player.team else g.winId == g.localId
-                val title = if (g.rules == Rules.TEAM) (if (won) "YOUR TEAM WINS" else "BOTS WIN")
+                val title = if (g.rules == Rules.STORY) "STORY COMPLETE" else if (g.rules == Rules.TEAM) (if (won) "YOUR TEAM WINS" else "BOTS WIN")
                 else (if (won) "VICTORY" else g.nameOf(g.winId).uppercase() + " WINS")
                 text(c, title, 240f, 66f, 32f, if (won) 0xFFFFD23F.toInt() else WHITE, Paint.Align.CENTER, fDisplay, .04f)
                 val goal = if (g.rules == Rules.TEAM) GOAL_TEAM else GOAL_SOLO
-                text(c, if (g.rules == Rules.TEAM) "First team to $goal kills." else "First to $goal kills.", 240f, 92f, 14f, MUTED, Paint.Align.CENTER, body)
+                text(c, if (g.rules == Rules.STORY) "The Overlord has fallen." else if (g.rules == Rules.TEAM) "First team to $goal kills." else "First to $goal kills.", 240f, 92f, 14f, MUTED, Paint.Align.CENTER, body)
                 val m = (g.matchTime / 60f).toInt()
                 val s = (g.matchTime % 60f).toInt()
                 val vals = arrayOf(g.player.kills.toString(), g.player.deaths.toString(), "$m:${if (s < 10) "0" else ""}$s")
@@ -1677,8 +1716,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         actions.add(Runnable {
             val g = game
             when (id) {
-                "team", "solo" -> {
-                    val r = if (id == "team") Rules.TEAM else Rules.SOLO
+                "team", "solo", "story" -> {
+                    val r = if (id == "team") Rules.TEAM else if (id == "solo") Rules.SOLO else Rules.STORY
                     val n = g.net
                     if (g.mode == Mode.HOST && n != null) {
                         if (r == Rules.TEAM && n.activeClients().size + 1 > 3) {
