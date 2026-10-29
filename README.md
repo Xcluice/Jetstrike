@@ -59,3 +59,27 @@ Locked characters can still be previewed on the menu, with their requirement and
 
 ### Map
 Natural rock edges are smoothed (relaxed outline plus curved edges, evenly spaced grass), and the collision grid has spikes under about 10 units removed and pits narrower than a soldier filled in, so nobody gets wedged in small notches.
+
+
+## 3D branch (`3d`)
+
+The `engine` package is a from-scratch OpenGL ES 2.0 engine in plain Kotlin, no libraries. It does not touch the 2D game yet; open the second launcher icon, **Jetstrike 3D**, to see the test scene (drag = orbit, pinch = range, double tap = switch map).
+
+| File | What it does |
+|---|---|
+| `Engine.kt` | `Engine`, `GameLogic` callbacks, `Engine3DView` (GLSurfaceView) and the renderer: sky, frustum culling, opaque then sorted transparent pass, particles |
+| `Scene.kt` | `Node` scene graph (position, Euler rotation, scale, tint, emissive, children) and `Scene` (sun, ambient, fog, sky, particles) |
+| `Camera.kt` | follow/orbit camera, smoothing, shake, `zoomRange` for the scope button, `screenToPlane` to turn touches into gameplay-plane positions |
+| `Mesh.kt` | `Mesh` plus `MeshBuilder`: box, sphere, cylinder/cone, and concave polygon extrusion (ear clipping) with auto-fixed winding |
+| `Particles.kt` | pooled point-sprite particles, alpha and additive systems, `burst` and `jet` emitters |
+| `Shaders.kt` | lit vertex-colour shader (sun + hemisphere + fog), point sprites, sky gradient |
+| `Terrain3D.kt` | extrudes the existing `Terrain` polygons into a 3D level; world units are map pixels x 0.02, y up, gameplay plane z = 0 |
+| `Prefabs.kt` | rigged low-poly soldier, crate and tracer |
+
+Plan: keep `Game.kt` as the simulation (it is already 2D physics on a collision grid), and replace the Canvas drawing in `GameView.kt` with `Node`s driven from `Ent`, `Bullet`, `Grenade` and `Particle`.
+
+### Jetstrike 3D (playable)
+`engine/Game3D.kt` runs the real `Game` simulation and draws it with the engine: 3D soldiers, extruded map, glowing bullets, 3D explosions/sparks, name tags and a touch HUD (floating move/aim sticks, grenade, swap, reload, pick, camera-view button, drag the middle of the screen to orbit). Pause menu starts a new team match or Story mode.
+
+#### Jetstrike 3D, current design
+`Game3DActivity` hosts the real `GameView` (same menu, characters, name, controls, HUD, soldiers, map art, background) on a transparent layer. In play, the world is drawn perspective-warped onto the gameplay plane through a shared camera (`View3D`), while the OpenGL layer underneath draws the game's own background and the map extruded into depth, so the camera leans with your movement and the world has thickness.
