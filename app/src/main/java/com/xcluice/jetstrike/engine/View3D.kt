@@ -52,7 +52,7 @@ object Snap3D {
     const val MAX_PICK = 64
     const val MAX_PART = 900
 
-    @JvmField val ents = Array(MAX_ENT) { SnapEnt() }
+    @JvmField val ents: Array<SnapEnt> = makeSnapEnts(MAX_ENT)
     @JvmField var nEnt = 0
     /** x, y, vx, vy, kind, big per bullet */
     @JvmField val bul = FloatArray(MAX_BUL * 6)
@@ -68,4 +68,11 @@ object Snap3D {
     @JvmField val partC = IntArray(MAX_PART)
     @JvmField var nPart = 0
     @JvmField var mapVer = 0
+}
+
+// built in a plain function: D8 chokes on an inlined Array(n) { } loop inside the object's static initializer
+private fun makeSnapEnts(n: Int): Array<SnapEnt> {
+    val a = ArrayList<SnapEnt>(n)
+    for (i in 0 until n) a.add(SnapEnt())
+    return a.toTypedArray()
 }
