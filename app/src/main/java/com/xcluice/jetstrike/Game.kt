@@ -1428,7 +1428,21 @@ class Game {
 
     private fun stepEnt(e: Ent, dt: Float) {
         if (!e.alive) {
-            if (rules == Rules.STORY) return
+            if (rules == Rules.STORY) {
+                // co-op: a fallen player comes back next to a living teammate; only if everyone is down at once does the run end
+                if (!e.human || mode != Mode.PLAY || storyState == 2) return
+                e.respawn -= dt
+                if (e.respawn <= 0f) {
+                    var ally: Ent? = null
+                    for (o in ents) if (o.human && o.alive) { ally = o; break }
+                    if (ally != null) {
+                        spawn(e)
+                        e.x = ally.x; e.y = ally.y; e.tx = e.x; e.ty = e.y
+                        e.inv = 2.5f
+                    }
+                }
+                return
+            }
             e.respawn -= dt
             if (e.respawn <= 0f) spawn(e)
             return
