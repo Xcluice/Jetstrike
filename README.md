@@ -77,3 +77,6 @@ The `engine` package is a from-scratch OpenGL ES 2.0 engine in plain Kotlin, no 
 | `Prefabs.kt` | rigged low-poly soldier, crate and tracer |
 
 Plan: keep `Game.kt` as the simulation (it is already 2D physics on a collision grid), and replace the Canvas drawing in `GameView.kt` with `Node`s driven from `Ent`, `Bullet`, `Grenade` and `Particle`.
+
+### Jetstrike 3D (playable)
+`engine/Game3D.kt` runs the real `Game` simulation and draws it with the engine: 3D soldiers, extruded map, glowing bullets, 3D explosions/sparks, name tags and a touch HUD (floating move/aim sticks, grenade, swap, reload, pick, camera-view button, drag the middle of the screen to orbit). Pause menu starts a new team match or Story mode.
