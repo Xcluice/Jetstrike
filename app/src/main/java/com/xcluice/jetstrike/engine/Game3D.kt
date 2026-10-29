@@ -113,10 +113,40 @@ class Game3DLogic(val game: Game) : GameLogic {
 
     override fun onCreate(e: Engine) {
         this.e = e
-        e.scene.fogStart = 70f; e.scene.fogEnd = 240f
+        val sc = e.scene
+        // warm sunset over a sea of clouds (blue to orange, no purple)
+        sc.skyTop = Scene.rgb(0xFF2F6DB5.toInt(), 1f)
+        sc.skyBottom = Scene.rgb(0xFFFFB27A.toInt(), 1f)
+        sc.fogColor = Scene.rgb(0xFFF3B98D.toInt(), 1f)
+        sc.sunColor = Scene.rgb(0xFFFFC98A.toInt(), 1.0f)
+        sc.ambientSky = Scene.rgb(0xFF9DB9E6.toInt(), 0.62f)
+        sc.ambientGround = Scene.rgb(0xFF6A4A3A.toInt(), 0.5f)
+        sc.sunDir = floatArrayOf(-0.55f, 0.5f, 0.65f)
+        sc.fogStart = 60f; sc.fogEnd = 210f
+        buildClouds(e)
         applyPreset(e)
         game.menuRules = Rules.TEAM
         startMatch(e, false)
+    }
+
+    private val clouds = ArrayList<Node>()
+    private fun buildClouds(e: Engine) {
+        val mb = MeshBuilder().color(0xFFFFFFFF.toInt())
+        mb.sphere(0f, 0f, 0f, 1.0f, 10, 6).sphere(1.1f, -0.1f, 0.2f, 0.8f, 10, 6).sphere(-1.0f, -0.15f, -0.1f, 0.85f, 10, 6).sphere(0.3f, 0.45f, 0f, 0.7f, 10, 6)
+        val mesh = mb.build()
+        val rnd = kotlin.random.Random(11)
+        for (i in 0 until 26) {
+            val n = Node(mesh)
+            val low = i % 2 == 0
+            n.setPos(rnd.nextFloat() * 120f - 25f, if (low) rnd.nextFloat() * 5f - 4f else 14f + rnd.nextFloat() * 30f, -14f - rnd.nextFloat() * 70f)
+            val s = 3f + rnd.nextFloat() * 6f
+            n.sx = s * 1.6f; n.sy = s * 0.55f; n.sz = s
+            n.tint(if (low) 0xE8FFF2E6.toInt() else 0xCCFFE2CC.toInt())
+            n.emissive = 0.35f
+            n.cull = false
+            clouds.add(n)
+            e.scene.add(n)
+        }
     }
 
     private fun applyPreset(e: Engine) {
@@ -165,6 +195,7 @@ class Game3DLogic(val game: Game) : GameLogic {
             builtMap = game.mapId
         }
         game.update(dt)
+        for (c in clouds) { c.x += dt * (0.25f + c.sz * 0.02f); if (c.x > 100f) c.x = -30f }
 
         // soldiers
         val seen = HashSet<Int>()
@@ -188,11 +219,11 @@ class Game3DLogic(val game: Game) : GameLogic {
             if (en.jetting) {
                 s.flame.sy = 0.8f + 0.4f * sin(e.time * 60f)
                 val back = if (right) -1f else 1f
-                e.scene.glow.jet(wx + back * 0.27f * sc, wy + 0.6f * sc, 0f, 0f, -1f, 0f, 1, 3f, 0.5f, 0.3f, 0.2f * sc, 0.02f, 0xFFFFD080.toInt(), 0x00FF3300)
+                e.scene.glow.jet(wx + back * 0.33f * sc, wy + 0.45f * sc, 0f, 0f, -1f, 0f, 1, 3f, 0.5f, 0.3f, 0.2f * sc, 0.02f, 0xFFFFD080.toInt(), 0x00FF3300)
                 jetFx += dt
                 if (jetFx > 0.03f) {
                     jetFx = 0f
-                    e.scene.particles.jet(wx + back * 0.27f * sc, wy + 0.5f * sc, 0f, 0f, -1f, 0f, 1, 2f, 0.8f, 0.8f, 0.12f * sc, 0.4f, 0x66AAAAAA, 0x00555555)
+                    e.scene.particles.jet(wx + back * 0.33f * sc, wy + 0.4f * sc, 0f, 0f, -1f, 0f, 1, 2f, 0.8f, 0.8f, 0.12f * sc, 0.4f, 0x66AAAAAA, 0x00555555)
                 }
             }
         }
@@ -243,7 +274,7 @@ class Game3DLogic(val game: Game) : GameLogic {
         for (p in game.parts) {
             val a = ((p.l / p.m).coerceIn(0f, 1f) * 235f).toInt()
             val rgb = p.c and 0x00FFFFFF
-            val size = (p.s * Terrain3D.S * 1.3f).coerceAtLeast(0.05f)
+            val size = (p.s * Terrain3D.S * (if (p.glow) 2.4f else 1.8f)).coerceAtLeast(0.06f)
             val sys = if (p.glow) e.scene.glow else e.scene.particles
             sys.emit(Terrain3D.wx(p.x), Terrain3D.wy(p.y), 0f, 0f, 0f, 0f, 0.05f, size, size, (a shl 24) or rgb, 0x00000000)
         }
@@ -391,7 +422,7 @@ class Hud3D(ctx: Context, private val game: Game, private val logic: Game3DLogic
         for (e in game.ents) {
             if (!e.alive || e === game.player && false) continue
             val wx = Terrain3D.wx(e.x); val wy = Terrain3D.wy(e.y)
-            val top = 1.55f * (if (e.sc <= 0f) 1f else e.sc)
+            val top = 1.75f * (if (e.sc <= 0f) 1f else e.sc)
             if (!project(wx, wy + top, 0f)) continue
             val x = out[0]; val y = out[1]
             val mine = e === game.player

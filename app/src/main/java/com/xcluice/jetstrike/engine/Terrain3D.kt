@@ -23,7 +23,7 @@ object Terrain3D {
     fun mapY(worldY: Float) = Terrain.worldH - worldY / S
 
     private val BASE = intArrayOf(
-        0, 0xFF8A7B6A.toInt(), 0xFFB9BCC2.toInt(), 0xFF9C6B3F.toInt(), 0xFF4D4640.toInt(), 0xFF6E7782.toInt()
+        0, 0xFF9A8268.toInt(), 0xFFC9C3B8.toInt(), 0xFFA06A3C.toInt(), 0xFF5A4A40.toInt(), 0xFF7A838E.toInt()
     )
 
     /** Builds the whole level as a node: one merged mesh per material plus grass and a backdrop. */
@@ -39,7 +39,7 @@ object Terrain3D {
             val cls = pl.cls.coerceIn(1, 5)
             val pts = worldOutline(pl)
             if (pts.size < 6) continue
-            val k = 0.9f + rnd.nextFloat() * 0.2f
+            val k = 0.82f + rnd.nextFloat() * 0.34f
             val b = builders[cls].shade(BASE[cls], k)
             when (cls) {
                 1, 2 -> b.extrude(pts, -h, h)
@@ -67,7 +67,7 @@ object Terrain3D {
                 val j = 2 * n + (n - 1 - i) * 2
                 strip[j] = wx(line[i * 2]); strip[j + 1] = wy(line[i * 2 + 1]) - 0.09f
             }
-            gb.shade(0xFF5FA845.toInt(), 0.9f + rnd.nextFloat() * 0.2f).extrude(strip, -h, h + 0.06f)
+            gb.shade(0xFF6FB94A.toInt(), 0.85f + rnd.nextFloat() * 0.2f).extrude(strip, -h, h + 0.06f)
         }
         val gm = gb.build()
         if (gm.vertexCount > 0) root.add(Node(gm).also { it.name = "grass" })
