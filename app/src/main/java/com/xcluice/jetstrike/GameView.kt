@@ -884,7 +884,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         }
     }
 
-    private fun drawSoldier(c: Canvas, e: Ent, tags: Boolean = true, body: Boolean = true) {
+    private fun drawSoldier(c: Canvas, e: Ent, tags: Boolean = true, drawBody: Boolean = true) {
         val sk = e.skin
         val h = sk.h
         val hurt = e.hurt > 0f
@@ -906,7 +906,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         val armW = 6.6f * h.limb
         val armLen = 12f + (h.tw - 9.5f) * .5f
 
-        if (!blink && body) {
+        if (!blink && drawBody) {
             c.save()
             c.translate(e.x, e.y)
             if (e.sc != 1f) c.scale(e.sc, e.sc)
