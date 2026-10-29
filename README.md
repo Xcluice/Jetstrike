@@ -40,3 +40,22 @@ Each of the 8 fighters has its own body shape and abilities (the old build only 
 | Rust | Berserker | Up to +80% damage as health drops, 105 HP, 5% faster | stocky with a cape |
 
 Max HP differs per fighter, bullet hit areas follow each body shape (big targets are easier to hit, small ones harder), and bots and story-mode enemies use the same abilities. All of it is in the `Hero` class in `Game.kt`.
+
+### Unlocking characters
+Only Nova is available at first. The rest unlock from lifetime milestones, saved on the device (kills and wins count for the local player; story waves keep your best).
+
+| Character | Milestone |
+|---|---|
+| Nova | Starter |
+| Blaze | Get 20 kills |
+| Frost | Win a match |
+| Viper | Get 75 kills |
+| Sol | Play 10 matches |
+| Bloom | Clear 2 story waves |
+| Onyx | Win 5 matches |
+| Rust | Defeat the Overlord in Story |
+
+Locked characters can still be previewed on the menu, with their requirement and progress shown. The milestones live in `Progress.kt`.
+
+### Map
+Natural rock edges are smoothed (relaxed outline plus curved edges, evenly spaced grass), and the collision grid has spikes under about 10 units removed and pits narrower than a soldier filled in, so nobody gets wedged in small notches.

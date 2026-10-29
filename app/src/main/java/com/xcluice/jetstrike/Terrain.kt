@@ -4,8 +4,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import kotlin.math.max
+import kotlin.math.min
 
-class TPoly(val cls: Int, val pts: FloatArray)
+class TPoly(val cls: Int, val pts: FloatArray, val smooth: Boolean = false)
 
 /** Everything that describes one level. */
 class MapDef(
@@ -68,15 +70,39 @@ object Terrain {
         for (chunk in MapData.POLYS) for (line in chunk.lineSequence()) {
             if (line.isBlank()) continue
             val f = floats(line)
-            ps.add(TPoly(f[0].toInt(), f.copyOfRange(1, f.size)))
+            val cls = f[0].toInt()
+            var pts = f.copyOfRange(1, f.size)
+            // natural rock (1) and cave (4) outlines were traced by hand and are full of tiny bumps: relax them
+            val soft = (cls == 1 || cls == 4) && pts.size >= 24
+            if (soft) pts = relax(pts, 3, true)
+            ps.add(TPoly(cls, pts, soft))
         }
         val gr = ArrayList<FloatArray>()
-        for (chunk in MapData.GRASS) for (line in chunk.lineSequence()) if (line.isNotBlank()) gr.add(floats(line))
+        for (chunk in MapData.GRASS) for (line in chunk.lineSequence()) if (line.isNotBlank()) gr.add(relax(floats(line), 3, false))
         val wi = ArrayList<FloatArray>()
         for (chunk in MapData.WINDOWS) for (line in chunk.lineSequence()) if (line.isNotBlank()) wi.add(floats(line))
         val pb = ArrayList<Float>()
         for (chunk in MapData.PEBBLES) for (line in chunk.lineSequence()) if (line.isNotBlank()) for (v in floats(line)) pb.add(v)
         return MapDef(MapData.W, MapData.H, ps, gr, wi, pb.toFloatArray(), MapData.SPAWNS, MapData.PICKS)
+    }
+
+    /** Laplacian smoothing of a polyline or polygon (x y pairs). Open lines keep their end points. */
+    private fun relax(src: FloatArray, passes: Int, closed: Boolean): FloatArray {
+        val n = src.size / 2
+        if (n < 3) return src
+        var a = src
+        repeat(passes) {
+            val b = a.copyOf()
+            for (i in 0 until n) {
+                if (!closed && (i == 0 || i == n - 1)) continue
+                val p = (i + n - 1) % n
+                val q = (i + 1) % n
+                b[i * 2] = (a[p * 2] + 2f * a[i * 2] + a[q * 2]) * .25f
+                b[i * 2 + 1] = (a[p * 2 + 1] + 2f * a[i * 2 + 1] + a[q * 2 + 1]) * .25f
+            }
+            a = b
+        }
+        return a
     }
 
     fun load(id: Int) {
@@ -96,9 +122,21 @@ object Terrain {
         path.fillType = Path.FillType.EVEN_ODD
         for (pl in polys) {
             if (pl.cls != cls) continue
-            path.moveTo(pl.pts[0], pl.pts[1])
-            var i = 2
-            while (i < pl.pts.size) { path.lineTo(pl.pts[i], pl.pts[i + 1]); i += 2 }
+            val q = pl.pts
+            if (pl.smooth) {
+                // curve through the edge mid points, so corners become round
+                val n = q.size / 2
+                path.moveTo((q[0] + q[2]) / 2f, (q[1] + q[3]) / 2f)
+                for (i in 1..n) {
+                    val a = i % n
+                    val b = (i + 1) % n
+                    path.quadTo(q[a * 2], q[a * 2 + 1], (q[a * 2] + q[b * 2]) / 2f, (q[a * 2 + 1] + q[b * 2 + 1]) / 2f)
+                }
+            } else {
+                path.moveTo(q[0], q[1])
+                var i = 2
+                while (i < q.size) { path.lineTo(q[i], q[i + 1]); i += 2 }
+            }
             path.close()
         }
         return path
@@ -124,8 +162,54 @@ object Terrain {
             for (x in 0 until gw) g[o + x] = if ((row[x] ushr 24) > 100) 1 else 0
         }
         bmp.recycle()
+        // remove spikes thinner than ~10 units, then fill pits and notches narrower than a soldier can enter
+        morph(g, 2, false); morph(g, 2, true)
+        morph(g, 4, true); morph(g, 4, false)
         smoothGrid(g)
         return g
+    }
+
+    /** Number of solid cells in the (2r+1) square around every cell, clamped at the map edge. */
+    private fun boxCount(g: ByteArray, r: Int): IntArray {
+        val h = IntArray(gw * gh)
+        for (y in 0 until gh) {
+            val o = y * gw
+            var run = 0
+            for (x in 0..min(r, gw - 1)) run += g[o + x]
+            for (x in 0 until gw) {
+                h[o + x] = run
+                val add = x + r + 1
+                if (add < gw) run += g[o + add]
+                val rem = x - r
+                if (rem >= 0) run -= g[o + rem]
+            }
+        }
+        val out = IntArray(gw * gh)
+        for (x in 0 until gw) {
+            var run = 0
+            for (y in 0..min(r, gh - 1)) run += h[y * gw + x]
+            for (y in 0 until gh) {
+                out[y * gw + x] = run
+                val add = y + r + 1
+                if (add < gh) run += h[add * gw + x]
+                val rem = y - r
+                if (rem >= 0) run -= h[rem * gw + x]
+            }
+        }
+        return out
+    }
+
+    /** Square dilation (grow solid) or erosion (shrink solid). Closing = dilate then erode, opening = erode then dilate. */
+    private fun morph(g: ByteArray, r: Int, dilate: Boolean) {
+        val cnt = boxCount(g, r)
+        for (y in 0 until gh) {
+            val hh = min(gh - 1, y + r) - max(0, y - r) + 1
+            for (x in 0 until gw) {
+                val i = y * gw + x
+                val full = (min(gw - 1, x + r) - max(0, x - r) + 1) * hh
+                g[i] = if (dilate) (if (cnt[i] > 0) 1 else 0) else (if (cnt[i] == full) 1 else 0)
+            }
+        }
     }
 
     /**

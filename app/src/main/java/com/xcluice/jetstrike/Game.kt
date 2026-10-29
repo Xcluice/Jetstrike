@@ -515,6 +515,10 @@ class Game {
 
     /* ---------- story mode ---------- */
     var storyWave = 0
+    /** Called with (stat, amount) when the local player earns progress: kill, win, play, wave, boss. */
+    var onStat: ((String, Int) -> Unit)? = null
+    private var prevMode = Mode.MENU
+    private var repWave = 0
     var storyState = 0
     var storyT = 0f
     var banner = ""
@@ -831,6 +835,7 @@ class Game {
         val zt = if (mode == Mode.PLAY || mode == Mode.OVER) zoomLevel() else 4f
         zoomCur += (zt - zoomCur) * (1f - exp(-8f * dt))
         pollNet()
+        trackProgress()
         if (role == Role.CLIENT && (mode == Mode.PLAY || mode == Mode.OVER)) {
             clientUpdate(dt)
         } else if (mode == Mode.PLAY) {
@@ -920,6 +925,17 @@ class Game {
     }
 
     /* ---------- events ---------- */
+    private fun trackProgress() {
+        if (mode == Mode.OVER && prevMode == Mode.PLAY) {
+            onStat?.invoke("play", 1)
+            if (rules == Rules.STORY) onStat?.invoke("boss", 1)
+            else if (if (rules == Rules.TEAM) winTeam == player.team else winId == localId) onStat?.invoke("win", 1)
+        }
+        if (mode == Mode.PLAY && rules == Rules.STORY && storyWave > repWave) { repWave = storyWave; onStat?.invoke("wave", storyWave) }
+        if (mode == Mode.MENU) repWave = 0
+        prevMode = mode
+    }
+
     private fun emit(typ: Int, x: Float, y: Float, a: Float, b: Float) {
         applyEvent(typ, x, y, a, b)
         if (role == Role.HOST && outEvents.size < 80) outEvents.add(Ev(typ, x, y, a, b))
@@ -996,6 +1012,7 @@ class Game {
                 val ka = ents.getOrNull(a.toInt())
                 val kb = ents.getOrNull(b.toInt())
                 if (ka != null && kb != null) {
+                    if (isMe(ka) && ka !== kb) onStat?.invoke("kill", 1)
                     feed.add(FeedItem(nameOf(ka.id), ka.skin.c, nameOf(kb.id), kb.skin.c, x.toInt()))
                     while (feed.size > 4) feed.removeAt(0)
                 }

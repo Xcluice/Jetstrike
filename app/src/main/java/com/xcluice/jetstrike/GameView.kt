@@ -182,6 +182,19 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private val editResetR = RectF()
     private val tmpR = RectF()
     private val previewEnt = Ent(99, SKINS[0], 0)
+    private val progress = Progress(prefs)
+    /** The character shown on the menu stage; equals the equipped one unless the player is looking at a locked one. */
+    private var browse = 0
+    private val chPath = Path()
+    private val LIME = 0xFFD9FF3F.toInt()
+    private val CYAN = 0xFF39E3FF.toInt()
+    private val HOT = 0xFFFF3D7F.toInt()
+    private val DIM = 0xFF8C95BF.toInt()
+    private val PANEL = 0xE60B0F24.toInt()
+    private val CHIP = 0xCC141A3A.toInt()
+    private val limeP = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val wordP = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val bgP = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private var hostList: List<HostInfo> = emptyList()
     private var ipCache = ""
@@ -193,13 +206,13 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private var uiOy = 0f
     private val backBtn = Btn("back", 372f, 18f, 448f, 52f)
     private val menuBtns = listOf(
-        Btn("team", 204f, 82f, 290f, 112f), Btn("solo", 296f, 82f, 374f, 112f), Btn("story", 380f, 82f, 460f, 112f),
-        Btn("easy", 204f, 134f, 284f, 160f), Btn("normal", 290f, 134f, 374f, 160f), Btn("hard", 380f, 134f, 460f, 160f),
-        Btn("offline", 204f, 172f, 460f, 218f),
-        Btn("host", 204f, 228f, 284f, 266f), Btn("join", 292f, 228f, 372f, 266f), Btn("ctl", 380f, 228f, 460f, 266f),
-        Btn("prev", 24f, 128f, 50f, 164f), Btn("next", 158f, 128f, 184f, 164f),
-        Btn("name", 20f, 238f, 188f, 278f)
-    )
+        Btn("team", 188f, 52f, 276f, 98f), Btn("solo", 284f, 52f, 372f, 98f), Btn("story", 380f, 52f, 468f, 98f),
+        Btn("easy", 188f, 131f, 278f, 153f), Btn("normal", 282f, 131f, 374f, 153f), Btn("hard", 378f, 131f, 468f, 153f),
+        Btn("offline", 188f, 160f, 468f, 200f),
+        Btn("host", 188f, 208f, 276f, 230f), Btn("join", 284f, 208f, 372f, 230f), Btn("ctl", 380f, 208f, 468f, 230f),
+        Btn("prev", 14f, 120f, 36f, 162f), Btn("next", 152f, 120f, 174f, 162f),
+        Btn("name", 368f, 8f, 468f, 32f)
+    ) + List(8) { Btn("hero$it", 12f + it * 57.7f, 240f, 12f + it * 57.7f + 52f, 292f) }
     private val hostBtns = listOf(
         backBtn,
         Btn("team", 36f, 114f, 170f, 150f), Btn("solo", 176f, 114f, 310f, 150f), Btn("story", 316f, 114f, 444f, 150f),
@@ -223,6 +236,11 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         game.sfx = { n, v -> sfx.play(n, v) }
         game.mySkin = prefs.getInt("skin", 0).coerceIn(0, SKINS.size - 1)
         game.myName = (prefs.getString("name", "Player") ?: "Player").take(12)
+        if (!progress.unlocked(game.mySkin)) game.mySkin = 0
+        browse = game.mySkin
+        game.onStat = { stat, n ->
+            for (i in progress.bump(stat, n)) game.note("UNLOCKED: " + SKINS[i].name.uppercase() + " (" + SKINS[i].h.role + ")")
+        }
         titlePaint.shader = LinearGradient(68f, 0f, 270f, 0f,
             intArrayOf(TEAL, 0xFFFFD23F.toInt(), 0xFFFF8A3D.toInt()), floatArrayOf(0f, .55f, 1f), Shader.TileMode.CLAMP)
         playPaint.shader = LinearGradient(36f, 0f, 444f, 0f,
@@ -231,6 +249,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             intArrayOf(TEAL, 0xFFFFD23F.toInt(), 0xFFFF7A3D.toInt()), floatArrayOf(0f, .55f, 1f), Shader.TileMode.CLAMP)
         selPaint.shader = LinearGradient(0f, 0f, 480f, 0f,
             intArrayOf(TEAL, 0xFFFFB347.toInt()), null, Shader.TileMode.CLAMP)
+        limeP.shader = LinearGradient(0f, 0f, 480f, 0f, intArrayOf(LIME, 0xFF3FFFB0.toInt(), CYAN), floatArrayOf(0f, .6f, 1f), Shader.TileMode.CLAMP)
+        wordP.shader = LinearGradient(16f, 0f, 140f, 0f, intArrayOf(LIME, CYAN), null, Shader.TileMode.CLAMP)
         holder.addCallback(this)
         isFocusable = true
     }
@@ -250,6 +270,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             val cut = rootWindowInsets?.displayCutout
             if (cut != null) { insetL = cut.safeInsetLeft.toFloat(); insetR = cut.safeInsetRight.toFloat() }
         }
+        bgP.shader = LinearGradient(0f, 0f, W, H, intArrayOf(0xFF070A1C.toInt(), 0xFF1A0E36.toInt(), 0xFF082A3A.toInt()), floatArrayOf(0f, .55f, 1f), Shader.TileMode.CLAMP)
         skyPaint.shader = LinearGradient(0f, 0f, 0f, H,
             intArrayOf(0xFF052A40.toInt(), 0xFF0F7C86.toInt(), 0xFFF2B266.toInt(), 0xFFFFCF8A.toInt()),
             floatArrayOf(0f, .5f, .85f, 1f), Shader.TileMode.CLAMP)
@@ -364,14 +385,59 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         c.drawText(s, x, y, tp)
     }
 
+    private fun chamPath(l: Float, t: Float, r: Float, b: Float, cut: Float) {
+        chPath.reset()
+        chPath.moveTo(l + cut, t); chPath.lineTo(r, t); chPath.lineTo(r, b - cut)
+        chPath.lineTo(r - cut, b); chPath.lineTo(l, b); chPath.lineTo(l, t + cut); chPath.close()
+    }
+
+    /** Filled panel with two cut corners (top left and bottom right). */
+    private fun cham(c: Canvas, l: Float, t: Float, r: Float, b: Float, cut: Float, col: Int) {
+        chamPath(l, t, r, b, cut)
+        p.shader = null; p.style = Paint.Style.FILL; p.color = col
+        c.drawPath(chPath, p)
+    }
+
+    private fun chamS(c: Canvas, l: Float, t: Float, r: Float, b: Float, cut: Float, col: Int, w: Float) {
+        chamPath(l, t, r, b, cut)
+        sp.shader = null; sp.strokeWidth = w; sp.color = col
+        c.drawPath(chPath, sp)
+    }
+
+    /** Parallelogram, leaning right. */
+    private fun slant(c: Canvas, l: Float, t: Float, r: Float, b: Float, k: Float, paint: Paint) {
+        chPath.reset()
+        chPath.moveTo(l + k, t); chPath.lineTo(r, t); chPath.lineTo(r - k, b); chPath.lineTo(l, b); chPath.close()
+        paint.style = Paint.Style.FILL
+        c.drawPath(chPath, paint)
+    }
+
+    private fun lock(c: Canvas, cx: Float, cy: Float, k: Float, col: Int) {
+        sp.shader = null; sp.strokeWidth = 2.6f * k; sp.color = col
+        rect.set(cx - 5f * k, cy - 11f * k, cx + 5f * k, cy + 1f * k)
+        c.drawArc(rect, 180f, 180f, false, sp)
+        line(c, cx - 5f * k, cy - 5f * k, cx - 5f * k, cy, 2.6f * k, col)
+        line(c, cx + 5f * k, cy - 5f * k, cx + 5f * k, cy, 2.6f * k, col)
+        rr(c, cx - 8f * k, cy - 1f * k, cx + 8f * k, cy + 12f * k, 2.5f * k, col)
+        circle(c, cx, cy + 5f * k, 1.7f * k, 0xFF0B0F24.toInt())
+    }
+
     private fun glass(c: Canvas, l: Float, t: Float, r: Float, b: Float, rad: Float, sw: Float) {
-        rr(c, l, t, r, b, rad, 0x66062030)
-        gp.style = Paint.Style.FILL
-        gp.shader = LinearGradient(0f, t, 0f, b, 0x4DFFFFFF, 0x14FFFFFF, Shader.TileMode.CLAMP)
-        rect.set(l, t, r, b)
-        c.drawRoundRect(rect, rad, rad, gp)
-        sp.shader = null; sp.strokeWidth = sw; sp.color = 0x66FFFFFF
-        c.drawRoundRect(rect, rad, rad, sp)
+        cham(c, l + 3f, t + 3f, r + 3f, b + 3f, 22f, 0x66000000)
+        cham(c, l, t, r, b, 22f, PANEL)
+        chamS(c, l, t, r, b, 22f, 0x8039E3FF.toInt(), sw)
+        rr(c, l + 22f, t, l + 96f, t + 3f, 0f, LIME)
+    }
+
+    private fun drawMenuBackdrop(c: Canvas) {
+        bgP.style = Paint.Style.FILL
+        c.drawRect(0f, 0f, W, H, bgP)
+        sp.shader = null; sp.color = 0x0AFFFFFF; sp.strokeWidth = 26f * uiK / 3f
+        val gap = 120f * uiK / 3f
+        var x = -H + (game.t * 14f) % gap
+        while (x < W + 40f) { c.drawLine(x, H, x + H * .75f, 0f, sp); x += gap }
+        sp.color = 0x18D9FF3F; sp.strokeWidth = 3f
+        c.drawLine(0f, H * .94f, W, H * .86f, sp)
     }
 
     /* ---------- world ---------- */
@@ -501,25 +567,27 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             terrP.style = Paint.Style.STROKE; terrP.strokeCap = Paint.Cap.ROUND
             terrP.strokeWidth = 9f; terrP.color = 0xFF24401F.toInt(); c.drawPath(tmpPath, terrP)
             terrP.strokeWidth = 6f; terrP.color = 0xFF58A04A.toInt(); c.drawPath(tmpPath, terrP)
-            // leaf spikes
+            // leaf spikes, evenly spaced along the whole line
             q = 0
             var n = 0
+            var carry = 6f
             while (q + 3 < g.size) {
                 val x0 = g[q]; val y0 = g[q + 1]; val x1 = g[q + 2]; val y1 = g[q + 3]
                 val len = hypot(x1 - x0, y1 - y0)
-                var d = 8f
+                var d = carry
                 while (d < len) {
                     val f = d / len
                     val bx = x0 + (x1 - x0) * f
                     val by = y0 + (y1 - y0) * f - 2f
-                    val h = 9f + ((n * 37 + q * 11) % 9)
-                    val lean = ((n * 53 + q) % 7 - 3) * 1.6f
+                    val h = 9f + ((n * 37) % 9)
+                    val lean = ((n * 53) % 7 - 3) * 1.6f
                     tmpPath.reset()
                     tmpPath.moveTo(bx - 5f, by); tmpPath.lineTo(bx + lean, by - h); tmpPath.lineTo(bx + 5f, by); tmpPath.close()
                     terrP.style = Paint.Style.FILL; terrP.color = 0xFF4C9A44.toInt(); c.drawPath(tmpPath, terrP)
                     terrP.style = Paint.Style.STROKE; terrP.strokeWidth = 1.8f; terrP.color = 0xFF1F3B1C.toInt(); c.drawPath(tmpPath, terrP)
-                    d += 21f; n++
+                    d += 20f; n++
                 }
+                carry = d - len
                 q += 2
             }
         }
@@ -1569,36 +1637,32 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
     /* ---------- overlays ---------- */
     private fun btnShape(c: Canvas, b: Btn, primary: Boolean, label: String, selected: Boolean) {
+        val cx = (b.l + b.r) / 2f
+        val cy = (b.t + b.b) / 2f
         if (primary) {
-            playPaint.style = Paint.Style.FILL
-            rect.set(b.l, b.t, b.r, b.b)
-            c.drawRoundRect(rect, 16f, 16f, playPaint)
-            text(c, label, (b.l + b.r) / 2f, (b.t + b.b) / 2f + 7f, 21f, 0xFF04141C.toInt(), Paint.Align.CENTER, fDisplay, .06f)
+            slant(c, b.l + 4f, b.t + 4f, b.r + 4f, b.b + 4f, 14f, p.apply { shader = null; color = HOT })
+            slant(c, b.l, b.t, b.r, b.b, 14f, limeP)
+            text(c, label, cx, cy + 7f, 21f, 0xFF0B0F24.toInt(), Paint.Align.CENTER, fDisplay, .06f)
         } else if (selected) {
-            selPaint.style = Paint.Style.FILL
-            rect.set(b.l, b.t, b.r, b.b)
-            c.drawRoundRect(rect, 12f, 12f, selPaint)
-            text(c, label, (b.l + b.r) / 2f, (b.t + b.b) / 2f + 5f, 15f, 0xFF04141C.toInt(), Paint.Align.CENTER, body, .12f)
+            cham(c, b.l, b.t, b.r, b.b, 8f, CYAN)
+            text(c, label, cx, cy + 5f, 14f, 0xFF0B0F24.toInt(), Paint.Align.CENTER, body, .12f)
         } else {
-            rr(c, b.l, b.t, b.r, b.b, 12f, 0x40000000)
-            text(c, label, (b.l + b.r) / 2f, (b.t + b.b) / 2f + 5f, 15f, MUTED, Paint.Align.CENTER, body, .12f)
+            cham(c, b.l, b.t, b.r, b.b, 8f, CHIP)
+            chamS(c, b.l, b.t, b.r, b.b, 8f, 0x40FFFFFF, 1f)
+            text(c, label, cx, cy + 5f, 14f, DIM, Paint.Align.CENTER, body, .12f)
         }
     }
 
     private fun ghostBtn(c: Canvas, b: Btn, label: String) {
-        rr(c, b.l, b.t, b.r, b.b, 14f, 0x24FFFFFF)
-        sp.shader = null; sp.strokeWidth = 1.2f; sp.color = 0x59FFFFFF
-        rect.set(b.l, b.t, b.r, b.b)
-        c.drawRoundRect(rect, 14f, 14f, sp)
-        text(c, label, (b.l + b.r) / 2f, (b.t + b.b) / 2f + 6f, 17f, WHITE, Paint.Align.CENTER, body, .12f)
+        cham(c, b.l, b.t, b.r, b.b, 10f, CHIP)
+        chamS(c, b.l, b.t, b.r, b.b, 10f, 0x9939E3FF.toInt(), 1.3f)
+        text(c, label, (b.l + b.r) / 2f, (b.t + b.b) / 2f + 6f, 16f, WHITE, Paint.Align.CENTER, body, .12f)
     }
 
     private fun smallGhost(c: Canvas, b: Btn, label: String) {
-        rr(c, b.l, b.t, b.r, b.b, 12f, 0x24FFFFFF)
-        sp.shader = null; sp.strokeWidth = 1.2f; sp.color = 0x59FFFFFF
-        rect.set(b.l, b.t, b.r, b.b)
-        c.drawRoundRect(rect, 12f, 12f, sp)
-        text(c, label, (b.l + b.r) / 2f, (b.t + b.b) / 2f + 5f, 13f, WHITE, Paint.Align.CENTER, body, .12f)
+        cham(c, b.l, b.t, b.r, b.b, 7f, CHIP)
+        chamS(c, b.l, b.t, b.r, b.b, 7f, 0x9939E3FF.toInt(), 1.2f)
+        text(c, label, (b.l + b.r) / 2f, (b.t + b.b) / 2f + 4.5f, 12f, WHITE, Paint.Align.CENTER, body, .14f)
     }
 
     private fun drawLogo(c: Canvas) {
@@ -1612,6 +1676,128 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         circle(c, 68f, 48f, 17f, 0xFFFFFFFF.toInt())
         oval(c, 72f, 48f, 11f, 7.5f, 0xFF0A2A38.toInt())
         oval(c, 70f, 45f, 5f, 2.2f, 0xD98FF3FF.toInt())
+    }
+
+    private fun drawMenu(c: Canvas) {
+        val g = game
+        val sk = SKINS[browse]
+        val h = sk.h
+        val open = progress.unlocked(browse)
+        val dark = 0xFF0B0F24.toInt()
+
+        // top bar: wordmark, progress, name
+        c.save(); c.skew(-.2f, 0f)
+        tp.typeface = fDisplay; tp.textSize = 23f; tp.textAlign = Paint.Align.LEFT; tp.letterSpacing = .02f
+        tp.style = Paint.Style.FILL; tp.shader = wordP.shader
+        c.drawText("JETSTRIKE", 24f, 28f, tp)
+        tp.shader = null
+        rr(c, 18f, 32f, 128f, 35f, 0f, HOT)
+        c.restore()
+        text(c, "JETPACK ARENA", 150f, 28f, 8f, DIM, Paint.Align.LEFT, body, .3f)
+        text(c, progress.count().toString() + "/" + SKINS.size + " UNLOCKED", 358f, 20f, 9f, LIME, Paint.Align.RIGHT, body, .12f)
+        text(c, progress.get("kill").toString() + " KILLS   " + progress.get("win") + " WINS", 358f, 30f, 8f, DIM, Paint.Align.RIGHT, body, .1f)
+        val nb = byId(menuBtns, "name")
+        cham(c, nb.l, nb.t, nb.r, nb.b, 7f, CHIP)
+        chamS(c, nb.l, nb.t, nb.r, nb.b, 7f, 0x6639E3FF, 1f)
+        text(c, "PILOT NAME", nb.l + 8f, nb.t + 8.5f, 6.5f, DIM, Paint.Align.LEFT, body, .2f)
+        text(c, g.myName, nb.l + 8f, nb.t + 20.5f, 11.5f, WHITE, Paint.Align.LEFT, body, .04f)
+        text(c, "EDIT", nb.r - 8f, nb.t + 20.5f, 8f, LIME, Paint.Align.RIGHT, body, .12f)
+
+        // hero stage
+        cham(c, 12f, 40f, 176f, 228f, 16f, 0xCC0E1330.toInt())
+        chamS(c, 12f, 40f, 176f, 228f, 16f, (sk.c and 0xFFFFFF) or 0xCC000000.toInt(), 1.6f)
+        val chipW = h.role.length * 6.4f + 14f
+        cham(c, 18f, 46f, 18f + chipW, 59f, 5f, sk.c)
+        text(c, h.role, 25f, 56f, 8.5f, dark, Paint.Align.LEFT, body, .16f)
+        val badge = if (!open) "LOCKED" else if (browse == g.mySkin) "EQUIPPED" else ""
+        if (badge.isNotEmpty()) text(c, badge, 170f, 56f, 8.5f, if (open) LIME else HOT, Paint.Align.RIGHT, body, .16f)
+        text(c, sk.name.uppercase(), 18f, 82f, 22f, WHITE, Paint.Align.LEFT, fDisplay, .03f)
+        circle(c, 94f, 150f, 62f, (sk.c and 0xFFFFFF) or 0x12000000)
+        circle(c, 94f, 150f, 44f, (sk.c and 0xFFFFFF) or 0x1C000000)
+        circle(c, 94f, 150f, 26f, (sk.c and 0xFFFFFF) or 0x26000000)
+        oval(c, 94f, 193f, 42f, 5f, 0x66000000)
+        rr(c, 46f, 192f, 142f, 195f, 1.5f, 0x55FFFFFF)
+        previewEnt.skin = sk
+        previewEnt.aim = sin(g.t * .9f) * .3f
+        previewEnt.alive = true; previewEnt.onG = true; previewEnt.x = 0f; previewEnt.y = 0f
+        c.save(); c.translate(94f, 192f); c.scale(1.5f, 1.5f)
+        drawSoldier(c, previewEnt, false)
+        c.restore()
+        if (!open) {
+            cham(c, 14f, 85f, 174f, 200f, 12f, 0xE6070A1C.toInt())
+            lock(c, 94f, 112f, 1.5f, WHITE)
+            text(c, MILESTONES[browse].text.uppercase(), 94f, 148f, 10f, HOT, Paint.Align.CENTER, body, .08f)
+            rr(c, 44f, 158f, 144f, 164f, 3f, 0x33FFFFFF)
+            rr(c, 44f, 158f, 44f + 100f * progress.fraction(browse), 164f, 3f, LIME)
+            text(c, progress.progressText(browse), 94f, 180f, 9f, WHITE, Paint.Align.CENTER, body, .1f)
+        }
+        text(c, h.line1, 94f, 211f, 8.5f, WHITE, Paint.Align.CENTER, body, .01f)
+        text(c, h.line2, 94f, 222f, 7.5f, DIM, Paint.Align.CENTER, body, .01f)
+        for (id in arrayOf("prev", "next")) {
+            val b = byId(menuBtns, id)
+            cham(c, b.l, b.t, b.r, b.b, 6f, CHIP)
+            val cx = (b.l + b.r) / 2f
+            val d = if (id == "prev") -1f else 1f
+            line(c, cx - 3f * d, 134f, cx + 3f * d, 141f, 2.6f, LIME); line(c, cx + 3f * d, 141f, cx - 3f * d, 148f, 2.6f, LIME)
+        }
+
+        // mode tiles
+        text(c, "MODE", 188f, 47f, 8f, DIM, Paint.Align.LEFT, body, .3f)
+        val tiles = arrayOf(Triple("team", "TEAM", "VS BOTS"), Triple("solo", "SOLO", "FREE FOR ALL"), Triple("story", "STORY", "4 WAVES + BOSS"))
+        for ((k, t) in tiles.withIndex()) {
+            val b = byId(menuBtns, t.first)
+            val on = (g.menuRules == Rules.TEAM && k == 0) || (g.menuRules == Rules.SOLO && k == 1) || (g.menuRules == Rules.STORY && k == 2)
+            cham(c, b.l, b.t, b.r, b.b, 9f, if (on) LIME else CHIP)
+            if (!on) chamS(c, b.l, b.t, b.r, b.b, 9f, 0x40FFFFFF, 1f)
+            val tc = if (on) dark else DIM
+            val cx = (b.l + b.r) / 2f
+            when (k) {
+                0 -> { circle(c, cx - 6f, b.t + 14f, 4.5f, tc); circle(c, cx + 6f, b.t + 14f, 4.5f, tc) }
+                1 -> { circle(c, cx, b.t + 14f, 5f, tc); sp.shader = null; sp.strokeWidth = 1.6f; sp.color = tc; c.drawCircle(cx, b.t + 14f, 9f, sp) }
+                else -> {
+                    line(c, cx - 5f, b.t + 21f, cx - 5f, b.t + 7f, 2.2f, tc)
+                    chPath.reset(); chPath.moveTo(cx - 5f, b.t + 7f); chPath.lineTo(cx + 8f, b.t + 11f); chPath.lineTo(cx - 5f, b.t + 16f); chPath.close()
+                    p.shader = null; p.style = Paint.Style.FILL; p.color = tc; c.drawPath(chPath, p)
+                }
+            }
+            text(c, t.second, cx, b.t + 33f, 12.5f, if (on) dark else WHITE, Paint.Align.CENTER, fDisplay, .04f)
+            text(c, t.third, cx, b.t + 42f, 6.5f, if (on) 0xFF3A4A10.toInt() else DIM, Paint.Align.CENTER, body, .14f)
+        }
+        text(c, when (g.menuRules) { Rules.TEAM -> "You and friends vs bots"; Rules.SOLO -> "Every fighter for themselves"; else -> "Fight the waves, then the Overlord" }, 188f, 112f, 9.5f, LIME, Paint.Align.LEFT, body, .04f)
+
+        // difficulty
+        if (g.menuRules == Rules.STORY) {
+            cham(c, 188f, 124f, 468f, 153f, 8f, CHIP)
+            text(c, "Clear each wave to climb to the next tier.", 198f, 136f, 8.5f, WHITE, Paint.Align.LEFT, body, .02f)
+            text(c, "Everyone down and it restarts from wave 1.", 198f, 148f, 8.5f, HOT, Paint.Align.LEFT, body, .02f)
+        } else {
+            text(c, "BOT SKILL", 188f, 125f, 8f, DIM, Paint.Align.LEFT, body, .3f)
+            diffRow(c, menuBtns)
+        }
+        btnShape(c, byId(menuBtns, "offline"), true, if (g.menuRules == Rules.STORY) "START STORY" else "PLAY OFFLINE", false)
+        smallGhost(c, byId(menuBtns, "host"), "HOST LAN")
+        smallGhost(c, byId(menuBtns, "join"), "JOIN LAN")
+        smallGhost(c, byId(menuBtns, "ctl"), "CONTROLS")
+
+        // roster
+        for (i in SKINS.indices) {
+            val b = byId(menuBtns, "hero$i")
+            val sx = SKINS[i]
+            val u = progress.unlocked(i)
+            val sel = i == browse
+            cham(c, b.l, b.t, b.r, b.b, 8f, if (sel) 0xFF1B2250.toInt() else CHIP)
+            chamS(c, b.l, b.t, b.r, b.b, 8f, if (sel) LIME else 0x33FFFFFF, if (sel) 2f else 1f)
+            val cx = (b.l + b.r) / 2f
+            if (u) {
+                circo(c, cx, b.t + 18f, 10f, sx.c)
+                oval(c, cx + 3.5f, b.t + 18f, 5.5f, 4f, 0xFF8FE3F5.toInt())
+            } else {
+                circle(c, cx, b.t + 18f, 11f, 0xFF1A2040.toInt())
+                lock(c, cx, b.t + 14f, .9f, DIM)
+            }
+            text(c, sx.name.uppercase(), cx, b.t + 41f, 8f, if (u) WHITE else DIM, Paint.Align.CENTER, body, .12f)
+            if (i == g.mySkin) rr(c, b.l + 10f, b.b - 6f, b.r - 10f, b.b - 3.5f, 1f, LIME)
+        }
     }
 
     private fun rulesText(r: Rules): String = when (r) { Rules.TEAM -> "TEAM VS BOTS"; Rules.SOLO -> "SOLO"; else -> "STORY" }
@@ -1631,11 +1817,12 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private fun dots(): String = ".".repeat(1 + (game.t * 2f).toInt() % 3)
 
     private fun drawOverlay(c: Canvas) {
-        c.drawRect(0f, 0f, W, H, p.apply { shader = null; style = Paint.Style.FILL; color = 0x66041420 })
+        if (game.mode == Mode.MENU) drawMenuBackdrop(c)
+        else c.drawRect(0f, 0f, W, H, p.apply { shader = null; style = Paint.Style.FILL; color = 0x99060A1C.toInt() })
         c.save()
         c.translate(uiOx, uiOy)
         c.scale(uiK, uiK)
-        glass(c, 0f, 0f, 480f, 300f, 28f, 1.4f)
+        if (game.mode != Mode.MENU) glass(c, 0f, 0f, 480f, 300f, 28f, 1.4f)
         val g = game
         if (g.mode == Mode.PLAY && g.paused) {
             text(c, "PAUSED", 240f, 70f, 34f, WHITE, Paint.Align.CENTER, fDisplay, .04f)
@@ -1643,53 +1830,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             btnShape(c, pauseBtns[0], true, "RESUME", false)
             ghostBtn(c, pauseBtns[1], if (g.online) "LEAVE MATCH" else "QUIT TO MENU")
         } else when (g.mode) {
-            Mode.MENU -> {
-                c.save(); c.translate(20f, 12f); c.scale(.6f, .6f); c.translate(-36f, -22f); drawLogo(c); c.restore()
-                tp.typeface = fDisplay; tp.textSize = 28f; tp.textAlign = Paint.Align.LEFT; tp.letterSpacing = .02f
-                tp.style = Paint.Style.FILL
-                tp.shader = titlePaint.shader
-                c.drawText("JETSTRIKE", 68f, 42f, tp)
-                tp.shader = null
-                text(c, "Jetpack deathmatch", 68f, 58f, 11f, MUTED, Paint.Align.LEFT, body, .06f)
-                // character preview
-                rr(c, 20f, 72f, 188f, 228f, 16f, 0x33000000)
-                sp.shader = null; sp.strokeWidth = 1.2f; sp.color = 0x44FFFFFF
-                rect.set(20f, 72f, 188f, 228f)
-                c.drawRoundRect(rect, 16f, 16f, sp)
-                previewEnt.skin = SKINS[g.mySkin]
-                previewEnt.aim = sin(g.t * .9f) * .3f
-                previewEnt.alive = true; previewEnt.onG = true; previewEnt.x = 0f; previewEnt.y = 0f
-                c.save(); c.translate(108f, 206f); c.scale(1.55f, 1.55f)
-                drawSoldier(c, previewEnt, false)
-                c.restore()
-                text(c, SKINS[g.mySkin].name.uppercase() + " \u00B7 " + SKINS[g.mySkin].h.role, 104f, 221f, 11f, AMBER, Paint.Align.CENTER, body, .12f)
-                text(c, SKINS[g.mySkin].h.line1, 104f, 87f, 8.5f, WHITE, Paint.Align.CENTER, body, .01f)
-                text(c, SKINS[g.mySkin].h.line2, 104f, 99f, 8f, MUTED, Paint.Align.CENTER, body, .01f)
-                rr(c, 24f, 128f, 50f, 164f, 10f, 0x33000000)
-                rr(c, 158f, 128f, 184f, 164f, 10f, 0x33000000)
-                line(c, 41f, 138f, 33f, 146f, 3f, WHITE); line(c, 33f, 146f, 41f, 154f, 3f, WHITE)
-                line(c, 167f, 138f, 175f, 146f, 3f, WHITE); line(c, 175f, 146f, 167f, 154f, 3f, WHITE)
-                rr(c, 20f, 238f, 188f, 278f, 12f, 0x40000000)
-                text(c, "YOUR NAME", 32f, 252f, 9f, MUTED, Paint.Align.LEFT, body, .2f)
-                text(c, g.myName, 32f, 270f, 15f, WHITE, Paint.Align.LEFT, body, .04f)
-                text(c, "EDIT", 176f, 270f, 11f, AMBER, Paint.Align.RIGHT, body, .12f)
-                // play options
-                text(c, "MODE", 204f, 76f, 10f, MUTED, Paint.Align.LEFT, body, .2f)
-                rulesRow(c, byId(menuBtns, "team"), byId(menuBtns, "solo"), byId(menuBtns, "story"))
-                text(c, when (g.menuRules) { Rules.TEAM -> "You and friends vs bots"; Rules.SOLO -> "Every fighter for themselves"; else -> "4 waves, then the Overlord" }, 460f, 76f, 10f, AMBER, Paint.Align.RIGHT, body, .04f)
-                if (g.menuRules == Rules.STORY) {
-                    rr(c, 204f, 124f, 460f, 164f, 12f, 0x40000000)
-                    text(c, "Clear each wave to climb to the next tier.", 214f, 140f, 10f, WHITE, Paint.Align.LEFT, body, .02f)
-                    text(c, "Everyone down and it restarts from wave 1.", 214f, 156f, 10f, RED, Paint.Align.LEFT, body, .02f)
-                } else
-                text(c, "BOT SKILL", 204f, 128f, 10f, MUTED, Paint.Align.LEFT, body, .2f)
-                if (g.menuRules != Rules.STORY) diffRow(c, menuBtns)
-                btnShape(c, byId(menuBtns, "offline"), true, if (g.menuRules == Rules.STORY) "START STORY" else "PLAY OFFLINE", false)
-                smallGhost(c, byId(menuBtns, "host"), "HOST LAN")
-                smallGhost(c, byId(menuBtns, "join"), "JOIN LAN")
-                smallGhost(c, byId(menuBtns, "ctl"), "CONTROLS")
-                text(c, "Left stick moves and flies  |  Right stick aims and fires  |  Drag the screen to look", 240f, 291f, 9.5f, MUTED, Paint.Align.CENTER, body, .01f)
-            }
+            Mode.MENU -> drawMenu(c)
             Mode.HOST -> {
                 val n = (g.net?.activeClients()?.size ?: 0) + 1
                 val cap = if (g.menuRules == Rules.TEAM) 3 else 4
@@ -1715,10 +1856,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 } else {
                     for ((i, h) in hostList.take(3).withIndex()) {
                         val b = Btn("h$i", 36f, 84f + i * 56f, 444f, 130f + i * 56f)
-                        rr(c, b.l, b.t, b.r, b.b, 14f, 0x2AFFFFFF)
-                        sp.shader = null; sp.strokeWidth = 1.2f; sp.color = 0x66FFFFFF
-                        rect.set(b.l, b.t, b.r, b.b)
-                        c.drawRoundRect(rect, 14f, 14f, sp)
+                        cham(c, b.l, b.t, b.r, b.b, 12f, CHIP)
+                        chamS(c, b.l, b.t, b.r, b.b, 12f, 0x9939E3FF.toInt(), 1.2f)
                         text(c, h.ip, b.l + 16f, b.t + 20f, 15f, WHITE, Paint.Align.LEFT, body)
                         text(c, rulesText(Rules.values().getOrElse(h.rules) { Rules.TEAM }), b.l + 16f, b.t + 37f, 11f, MUTED, Paint.Align.LEFT, body, .1f)
                         text(c, "${h.players}/${h.max}   JOIN", b.r - 16f, b.t + 30f, 16f, AMBER, Paint.Align.RIGHT, fDisplay)
@@ -1745,7 +1884,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 val labs = arrayOf("KILLS", "DEATHS", "TIME")
                 for (i in 0 until 3) {
                     val x0 = 36f + i * 138f
-                    rr(c, x0, 116f, x0 + 132f, 188f, 14f, 0x40000000)
+                    cham(c, x0, 116f, x0 + 132f, 188f, 12f, CHIP)
                     text(c, vals[i], x0 + 66f, 158f, 28f, WHITE, Paint.Align.CENTER, fDisplay)
                     text(c, labs[i], x0 + 66f, 178f, 11f, MUTED, Paint.Align.CENTER, body, .18f)
                 }
@@ -1831,6 +1970,16 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         return null
     }
 
+    /** Equips the character on the stage if it is unlocked; otherwise tells the player what it takes. */
+    private fun pickHero(g: Game) {
+        if (progress.unlocked(browse)) {
+            g.mySkin = browse
+            prefs.edit().putInt("skin", browse).apply()
+        } else {
+            g.note(SKINS[browse].name.uppercase() + " is locked: " + MILESTONES[browse].text)
+        }
+    }
+
     private fun dispatch(id: String) {
         actions.add(Runnable {
             val g = game
@@ -1863,8 +2012,8 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 "offline" -> g.startOffline()
                 "prev", "next" -> {
                     val n = SKINS.size
-                    g.mySkin = (g.mySkin + (if (id == "next") 1 else n - 1)) % n
-                    prefs.edit().putInt("skin", g.mySkin).apply()
+                    browse = (browse + (if (id == "next") 1 else n - 1)) % n
+                    pickHero(g)
                 }
                 "name" -> askName()
                 "ctl" -> { editing = true; editSel = "move" }
@@ -1876,7 +2025,10 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 "resume" -> g.resume()
                 "quit", "menu" -> g.showMenu()
                 else -> {
-                    if (id.length == 2 && id[0] == 'h') {
+                    if (id.startsWith("hero")) {
+                        browse = (id.substring(4).toIntOrNull() ?: 0).coerceIn(0, SKINS.size - 1)
+                        pickHero(g)
+                    } else if (id.length == 2 && id[0] == 'h') {
                         val i = id[1] - '0'
                         val h = hostList.getOrNull(i)
                         if (h != null) g.joinConnect(h.ip)
