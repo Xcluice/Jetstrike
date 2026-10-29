@@ -59,3 +59,21 @@ Locked characters can still be previewed on the menu, with their requirement and
 
 ### Map
 Natural rock edges are smoothed (relaxed outline plus curved edges, evenly spaced grass), and the collision grid has spikes under about 10 units removed and pits narrower than a soldier filled in, so nobody gets wedged in small notches.
+
+
+## 3D branch (`3d`)
+
+The `engine` package is a from-scratch OpenGL ES 2.0 engine in plain Kotlin, no libraries. It does not touch the 2D game yet; open the second launcher icon, **Jetstrike 3D**, to see the test scene (drag = orbit, pinch = range, double tap = switch map).
+
+| File | What it does |
+|---|---|
+| `Engine.kt` | `Engine`, `GameLogic` callbacks, `Engine3DView` (GLSurfaceView) and the renderer: sky, frustum culling, opaque then sorted transparent pass, particles |
+| `Scene.kt` | `Node` scene graph (position, Euler rotation, scale, tint, emissive, children) and `Scene` (sun, ambient, fog, sky, particles) |
+| `Camera.kt` | follow/orbit camera, smoothing, shake, `zoomRange` for the scope button, `screenToPlane` to turn touches into gameplay-plane positions |
+| `Mesh.kt` | `Mesh` plus `MeshBuilder`: box, sphere, cylinder/cone, and concave polygon extrusion (ear clipping) with auto-fixed winding |
+| `Particles.kt` | pooled point-sprite particles, alpha and additive systems, `burst` and `jet` emitters |
+| `Shaders.kt` | lit vertex-colour shader (sun + hemisphere + fog), point sprites, sky gradient |
+| `Terrain3D.kt` | extrudes the existing `Terrain` polygons into a 3D level; world units are map pixels x 0.02, y up, gameplay plane z = 0 |
+| `Prefabs.kt` | rigged low-poly soldier, crate and tracer |
+
+Plan: keep `Game.kt` as the simulation (it is already 2D physics on a collision grid), and replace the Canvas drawing in `GameView.kt` with `Node`s driven from `Ent`, `Bullet`, `Grenade` and `Particle`.

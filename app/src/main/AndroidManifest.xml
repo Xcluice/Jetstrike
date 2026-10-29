@@ -23,5 +23,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 3D engine test scene, second launcher icon on the 3d branch -->
+        <activity
+            android:name=".engine.Engine3DActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"
+            android:exported="true"
+            android:label="Jetstrike 3D"
+            android:screenOrientation="sensorLandscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
