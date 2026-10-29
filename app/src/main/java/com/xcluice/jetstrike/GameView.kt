@@ -34,7 +34,17 @@ class Btn(val id: String, val l: Float, val t: Float, val r: Float, val b: Float
 
 class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnable {
 
-    private val game = Game()
+    val game = Game()
+    /** True when drawn over the OpenGL layer (Jetstrike 3D): the world is drawn perspective-warped on a transparent canvas. */
+    var mode3d = false
+    private val cam3 = com.xcluice.jetstrike.engine.Camera()
+    private val hm3 = Matrix()
+    private val hmSrc = FloatArray(8)
+    private val hmDst = FloatArray(8)
+    private var yawS = 0f
+    private var bgFrame = 0
+    private var bgIdx = 0
+    private val bgBufs = arrayOfNulls<Bitmap>(2)
     private val sfx = Sfx(ctx)
     private val prefs = ctx.getSharedPreferences("jetstrike", Context.MODE_PRIVATE)
     private val actions = ConcurrentLinkedQueue<Runnable>()
@@ -338,6 +348,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             val ns = baseScale * game.zoomCur / 4f
             if (abs(ns - scale) > 1e-5f) { scale = ns; game.vw = W / scale; game.vh = H / scale }
             game.update(dt)
+            if (mode3d) { try { bakeBg() } catch (e: Throwable) { } }
             val c: Canvas? = try {
                 if (Build.VERSION.SDK_INT >= 26) holder.lockHardwareCanvas() else holder.lockCanvas()
             } catch (e: Exception) { null }
@@ -500,11 +511,11 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         mountains(c, .55f, horizon + 330f * scale, 26f * scale, 0xFF6F8D5A.toInt(), .010f, .027f)
     }
 
-    private fun drawPlatforms(c: Canvas) {
-        val l = game.camX - 30f
-        val r = game.camX + game.vw + 30f
-        val t = game.camY - 30f
-        val b = game.camY + game.vh + 30f
+    private fun drawPlatforms(c: Canvas, full: Boolean = false) {
+        val l = if (full) 0f else game.camX - 30f
+        val r = if (full) Terrain.worldW else game.camX + game.vw + 30f
+        val t = if (full) 0f else game.camY - 30f
+        val b = if (full) Terrain.worldH else game.camY + game.vh + 30f
         if (terrVer != Terrain.version) {
             terrVer = Terrain.version
             terrPath = arrayOf(Path(), Terrain.classPath(1), Terrain.classPath(2), Terrain.classPath(3), Terrain.classPath(4), Terrain.classPath(5))
@@ -1940,9 +1951,89 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         text(c, g.notice, W / 2f, y0 + dp(20f), dp(13f), ((a * 255f).toInt() shl 24) or 0xEAF8FB, Paint.Align.CENTER, body)
     }
 
+    /* ---------- 3D layer ---------- */
+    private fun bakeBg() {
+        if (!com.xcluice.jetstrike.engine.View3D.active || W < 2f) return
+        bgFrame++
+        if ((bgFrame and 1) == 1) return
+        var bmp = bgBufs[bgIdx]
+        if (bmp == null) { bmp = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888); bgBufs[bgIdx] = bmp }
+        val cv = Canvas(bmp)
+        cv.save(); cv.scale(640f / W, 360f / H)
+        drawBackground(cv)
+        cv.restore()
+        com.xcluice.jetstrike.engine.View3D.bg = bmp
+        com.xcluice.jetstrike.engine.View3D.bgVer++
+        bgIdx = 1 - bgIdx
+    }
+
+    /** Same camera for both layers: looks at the middle of the 2D view, distance chosen so the gameplay plane keeps the 2D scale. */
+    private fun updateCam3() {
+        val S = com.xcluice.jetstrike.engine.Terrain3D.S
+        val cxm = game.camX + game.vw / 2f
+        val cym = game.camY + game.vh / 2f
+        val pl = game.player
+        val lean = (pl.vx / 700f).coerceIn(-1f, 1f) * .2f + sin(game.t * .35f) * .05f
+        yawS += (lean - yawS) * .05f
+        val tx = com.xcluice.jetstrike.engine.Terrain3D.wx(cxm)
+        val ty = com.xcluice.jetstrike.engine.Terrain3D.wy(cym)
+        val dist = (H / 2f) / kotlin.math.tan(Math.toRadians(cam3.fov / 2.0)).toFloat() * S / scale
+        val pitch = .13f
+        cam3.smooth = 10000f
+        cam3.yaw = yawS; cam3.pitch = pitch
+        cam3.goalX = tx; cam3.goalY = ty; cam3.goalZ = 0f; cam3.goalDistance = dist
+        cam3.snap()
+        cam3.update(.016f, W / H)
+        val v = com.xcluice.jetstrike.engine.View3D
+        v.tx = tx; v.ty = ty; v.dist = dist; v.yaw = yawS; v.pitch = pitch
+        // homography: map pixels on the gameplay plane (z = 0) to screen pixels through the shared camera
+        val hx = 1500f; val hy = 900f
+        val px = floatArrayOf(cxm - hx, cym - hy, cxm + hx, cym - hy, cxm + hx, cym + hy, cxm - hx, cym + hy)
+        val m = cam3.viewProj
+        for (i in 0 until 4) {
+            val wx = com.xcluice.jetstrike.engine.Terrain3D.wx(px[i * 2]); val wy = com.xcluice.jetstrike.engine.Terrain3D.wy(px[i * 2 + 1])
+            val x = m[0] * wx + m[4] * wy + m[12]
+            val y = m[1] * wx + m[5] * wy + m[13]
+            val w = m[3] * wx + m[7] * wy + m[15]
+            hmSrc[i * 2] = px[i * 2]; hmSrc[i * 2 + 1] = px[i * 2 + 1]
+            hmDst[i * 2] = (x / w * .5f + .5f) * W
+            hmDst[i * 2 + 1] = (1f - (y / w * .5f + .5f)) * H
+        }
+        hm3.setPolyToPoly(hmSrc, 0, hmDst, 0, 4)
+    }
+
+    private fun render3D(c: Canvas) {
+        c.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR)
+        updateCam3()
+        c.save()
+        c.concat(hm3)
+        val sh = game.shake
+        if (sh > .1f) c.translate(rnd(-sh, sh), rnd(-sh, sh))
+        drawPlatforms(c, true)
+        drawPicks(c)
+        drawGrenades(c)
+        for (e in game.ents) if (e.alive) drawSoldier(c, e)
+        drawBullets(c)
+        drawParts(c)
+        drawDamageTexts(c)
+        if (game.mode == Mode.PLAY && !game.paused && abs(game.zoomCur - 4f) < .2f) drawAim(c)
+        c.restore()
+        drawScope(c)
+        if (game.vigT > 0f) {
+            vigPaint.alpha = (min(1f, game.vigT) * 255f).toInt()
+            c.drawRect(0f, 0f, W, H, vigPaint)
+        }
+        drawHud(c)
+        if (game.mode != Mode.PLAY || game.paused) drawOverlay(c)
+        drawNotice(c)
+    }
+
     /* ---------- frame ---------- */
     private fun render(c: Canvas) {
         hostList = if (game.mode == Mode.JOIN) (game.net?.liveHosts() ?: emptyList()) else emptyList()
+        val ov = mode3d && !editing && (game.mode == Mode.PLAY || game.mode == Mode.OVER)
+        com.xcluice.jetstrike.engine.View3D.active = ov
+        if (ov) { render3D(c); return }
         c.drawColor(0xFF04141C.toInt())
         drawBackground(c)
         c.save()

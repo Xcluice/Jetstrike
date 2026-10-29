@@ -124,6 +124,24 @@ void main() {
 }
 """
 
+    const val BG_VS = """
+attribute vec2 aPos;
+varying vec2 vUv;
+void main() {
+    vUv = vec2(aPos.x * 0.5 + 0.5, 1.0 - (aPos.y * 0.5 + 0.5));
+    gl_Position = vec4(aPos, 0.999, 1.0);
+}
+"""
+
+    const val BG_FS = """
+precision mediump float;
+uniform sampler2D uTex;
+varying vec2 vUv;
+void main() {
+    gl_FragColor = vec4(texture2D(uTex, vUv).rgb, 1.0);
+}
+"""
+
     const val SKY_VS = """
 attribute vec2 aPos;
 varying float vY;

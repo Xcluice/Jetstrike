@@ -80,3 +80,6 @@ Plan: keep `Game.kt` as the simulation (it is already 2D physics on a collision 
 
 ### Jetstrike 3D (playable)
 `engine/Game3D.kt` runs the real `Game` simulation and draws it with the engine: 3D soldiers, extruded map, glowing bullets, 3D explosions/sparks, name tags and a touch HUD (floating move/aim sticks, grenade, swap, reload, pick, camera-view button, drag the middle of the screen to orbit). Pause menu starts a new team match or Story mode.
+
+#### Jetstrike 3D, current design
+`Game3DActivity` hosts the real `GameView` (same menu, characters, name, controls, HUD, soldiers, map art, background) on a transparent layer. In play, the world is drawn perspective-warped onto the gameplay plane through a shared camera (`View3D`), while the OpenGL layer underneath draws the game's own background and the map extruded into depth, so the camera leans with your movement and the world has thickness.

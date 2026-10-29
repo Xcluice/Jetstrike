@@ -42,8 +42,8 @@ object Terrain3D {
             val k = 0.82f + rnd.nextFloat() * 0.34f
             val b = builders[cls].shade(BASE[cls], k)
             when (cls) {
-                1, 2 -> b.extrude(pts, -h, h)
-                3 -> b.extrude(pts, -h + 0.25f, h - 0.25f)
+                1, 2 -> b.extrude(pts, -DEPTH, -0.04f)
+                3 -> b.extrude(pts, -DEPTH + 0.25f, -0.06f)
                 4 -> b.extrude(pts, -h - 0.8f, -h + 0.6f)
                 else -> b.extrude(pts, -h - 1.4f, -h - 0.2f)
             }
@@ -67,7 +67,7 @@ object Terrain3D {
                 val j = 2 * n + (n - 1 - i) * 2
                 strip[j] = wx(line[i * 2]); strip[j + 1] = wy(line[i * 2 + 1]) - 0.09f
             }
-            gb.shade(0xFF6FB94A.toInt(), 0.85f + rnd.nextFloat() * 0.2f).extrude(strip, -h, h + 0.06f)
+            gb.shade(0xFF6FB94A.toInt(), 0.85f + rnd.nextFloat() * 0.2f).extrude(strip, -DEPTH, -0.03f)
         }
         val gm = gb.build()
         if (gm.vertexCount > 0) root.add(Node(gm).also { it.name = "grass" })
