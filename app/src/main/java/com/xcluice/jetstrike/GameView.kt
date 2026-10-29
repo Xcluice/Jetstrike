@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
@@ -186,6 +187,15 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     /** The character shown on the menu stage; equals the equipped one unless the player is looking at a locked one. */
     private var browse = 0
     private val chPath = Path()
+    private val mx = Matrix()
+    private val lp = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val liqFill = LinearGradient(0f, 0f, 0f, 1f, intArrayOf(0x66FFFFFF, 0x1AFFFFFF, 0x0DFFFFFF, 0x2BFFFFFF),
+        floatArrayOf(0f, .42f, .72f, 1f), Shader.TileMode.CLAMP)
+    private val liqEdge = LinearGradient(0f, 0f, 0f, 1f, intArrayOf(0xD9FFFFFF.toInt(), 0x59FFFFFF, 0x26FFFFFF, 0x73FFFFFF),
+        floatArrayOf(0f, .3f, .7f, 1f), Shader.TileMode.CLAMP)
+    private val blobA = RadialGradient(0f, 0f, 1f, 0x8019E3C8.toInt(), 0x0019E3C8, Shader.TileMode.CLAMP)
+    private val blobB = RadialGradient(0f, 0f, 1f, 0x70FF3D7F.toInt(), 0x00FF3D7F, Shader.TileMode.CLAMP)
+    private val blobC = RadialGradient(0f, 0f, 1f, 0x66FFB347.toInt(), 0x00FFB347, Shader.TileMode.CLAMP)
     private val LIME = 0xFFD9FF3F.toInt()
     private val CYAN = 0xFF39E3FF.toInt()
     private val HOT = 0xFFFF3D7F.toInt()
@@ -270,7 +280,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             val cut = rootWindowInsets?.displayCutout
             if (cut != null) { insetL = cut.safeInsetLeft.toFloat(); insetR = cut.safeInsetRight.toFloat() }
         }
-        bgP.shader = LinearGradient(0f, 0f, W, H, intArrayOf(0xFF070A1C.toInt(), 0xFF1A0E36.toInt(), 0xFF082A3A.toInt()), floatArrayOf(0f, .55f, 1f), Shader.TileMode.CLAMP)
+        bgP.shader = LinearGradient(0f, 0f, W, H, intArrayOf(0xFF081230.toInt(), 0xFF150F3A.toInt(), 0xFF07233A.toInt()), floatArrayOf(0f, .55f, 1f), Shader.TileMode.CLAMP)
         skyPaint.shader = LinearGradient(0f, 0f, 0f, H,
             intArrayOf(0xFF052A40.toInt(), 0xFF0F7C86.toInt(), 0xFFF2B266.toInt(), 0xFFFFCF8A.toInt()),
             floatArrayOf(0f, .5f, .85f, 1f), Shader.TileMode.CLAMP)
@@ -385,33 +395,6 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         c.drawText(s, x, y, tp)
     }
 
-    private fun chamPath(l: Float, t: Float, r: Float, b: Float, cut: Float) {
-        chPath.reset()
-        chPath.moveTo(l + cut, t); chPath.lineTo(r, t); chPath.lineTo(r, b - cut)
-        chPath.lineTo(r - cut, b); chPath.lineTo(l, b); chPath.lineTo(l, t + cut); chPath.close()
-    }
-
-    /** Filled panel with two cut corners (top left and bottom right). */
-    private fun cham(c: Canvas, l: Float, t: Float, r: Float, b: Float, cut: Float, col: Int) {
-        chamPath(l, t, r, b, cut)
-        p.shader = null; p.style = Paint.Style.FILL; p.color = col
-        c.drawPath(chPath, p)
-    }
-
-    private fun chamS(c: Canvas, l: Float, t: Float, r: Float, b: Float, cut: Float, col: Int, w: Float) {
-        chamPath(l, t, r, b, cut)
-        sp.shader = null; sp.strokeWidth = w; sp.color = col
-        c.drawPath(chPath, sp)
-    }
-
-    /** Parallelogram, leaning right. */
-    private fun slant(c: Canvas, l: Float, t: Float, r: Float, b: Float, k: Float, paint: Paint) {
-        chPath.reset()
-        chPath.moveTo(l + k, t); chPath.lineTo(r, t); chPath.lineTo(r - k, b); chPath.lineTo(l, b); chPath.close()
-        paint.style = Paint.Style.FILL
-        c.drawPath(chPath, paint)
-    }
-
     private fun lock(c: Canvas, cx: Float, cy: Float, k: Float, col: Int) {
         sp.shader = null; sp.strokeWidth = 2.6f * k; sp.color = col
         rect.set(cx - 5f * k, cy - 11f * k, cx + 5f * k, cy + 1f * k)
@@ -422,22 +405,66 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         circle(c, cx, cy + 5f * k, 1.7f * k, 0xFF0B0F24.toInt())
     }
 
+    /** The in-game glass used by the HUD buttons and panels (unchanged from the original look). */
     private fun glass(c: Canvas, l: Float, t: Float, r: Float, b: Float, rad: Float, sw: Float) {
-        cham(c, l + 3f, t + 3f, r + 3f, b + 3f, 22f, 0x66000000)
-        cham(c, l, t, r, b, 22f, PANEL)
-        chamS(c, l, t, r, b, 22f, 0x8039E3FF.toInt(), sw)
-        rr(c, l + 22f, t, l + 96f, t + 3f, 0f, LIME)
+        rr(c, l, t, r, b, rad, 0x66062030)
+        gp.style = Paint.Style.FILL
+        gp.shader = LinearGradient(0f, t, 0f, b, 0x4DFFFFFF, 0x14FFFFFF, Shader.TileMode.CLAMP)
+        rect.set(l, t, r, b)
+        c.drawRoundRect(rect, rad, rad, gp)
+        sp.shader = null; sp.strokeWidth = sw; sp.color = 0x66FFFFFF
+        c.drawRoundRect(rect, rad, rad, sp)
+    }
+
+    /**
+     * Liquid glass: a translucent rounded body (optionally tinted), a soft vertical sheen, a bright specular
+     * highlight along the top and a thin edge that is bright on top and fades toward the bottom.
+     */
+    private fun liquid(c: Canvas, l: Float, t: Float, r: Float, b: Float, rad: Float, tint: Int = 0) {
+        val h = b - t
+        val rd = min(rad, min(h, r - l) / 2f)
+        rect.set(l, t, r, b)
+        lp.shader = null; lp.style = Paint.Style.FILL
+        lp.color = if (tint != 0) tint else 0x2E0B1433
+        c.drawRoundRect(rect, rd, rd, lp)
+        mx.setScale(1f, h); mx.postTranslate(0f, t)
+        liqFill.setLocalMatrix(mx); lp.shader = liqFill
+        c.drawRoundRect(rect, rd, rd, lp)
+        // specular highlight
+        val hh = min(5.5f, max(2.4f, h * .17f))
+        val hi = rd * .55f + 2f
+        if (r - l > hi * 2f + 6f) {
+            rect.set(l + hi, t + 1.8f, r - hi, t + 1.8f + hh)
+            lp.shader = null; lp.color = 0x4DFFFFFF
+            c.drawRoundRect(rect, hh / 2f, hh / 2f, lp)
+        }
+        // faint light caught along the lower rim
+        rect.set(l + rd * .8f, b - 3.2f, r - rd * .8f, b - 1.6f)
+        lp.color = 0x1FFFFFFF
+        if (r - l > rd * 1.6f + 6f) c.drawRoundRect(rect, .8f, .8f, lp)
+        // edge
+        liqEdge.setLocalMatrix(mx)
+        sp.shader = liqEdge; sp.strokeWidth = 1.2f
+        rect.set(l + .6f, t + .6f, r - .6f, b - .6f)
+        c.drawRoundRect(rect, rd, rd, sp)
+        sp.shader = null
     }
 
     private fun drawMenuBackdrop(c: Canvas) {
         bgP.style = Paint.Style.FILL
         c.drawRect(0f, 0f, W, H, bgP)
-        sp.shader = null; sp.color = 0x0AFFFFFF; sp.strokeWidth = 26f * uiK / 3f
-        val gap = 120f * uiK / 3f
-        var x = -H + (game.t * 14f) % gap
-        while (x < W + 40f) { c.drawLine(x, H, x + H * .75f, 0f, sp); x += gap }
-        sp.color = 0x18D9FF3F; sp.strokeWidth = 3f
-        c.drawLine(0f, H * .94f, W, H * .86f, sp)
+        val t = game.t
+        val r = max(W, H) * .55f
+        val blobs = arrayOf(blobA, blobB, blobC)
+        for (i in 0 until 3) {
+            val cx = W * (.2f + .3f * i + .08f * sin(t * .25f + i * 2.1f))
+            val cy = H * (.3f + .25f * (i % 2) + .08f * cos(t * .2f + i * 1.3f))
+            mx.setScale(r, r); mx.postTranslate(cx, cy)
+            blobs[i].setLocalMatrix(mx)
+            p.shader = blobs[i]; p.style = Paint.Style.FILL
+            c.drawRect(0f, 0f, W, H, p)
+        }
+        p.shader = null
     }
 
     /* ---------- world ---------- */
@@ -1639,29 +1666,30 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private fun btnShape(c: Canvas, b: Btn, primary: Boolean, label: String, selected: Boolean) {
         val cx = (b.l + b.r) / 2f
         val cy = (b.t + b.b) / 2f
+        val rad = (b.b - b.t) / 2f
         if (primary) {
-            slant(c, b.l + 4f, b.t + 4f, b.r + 4f, b.b + 4f, 14f, p.apply { shader = null; color = HOT })
-            slant(c, b.l, b.t, b.r, b.b, 14f, limeP)
-            text(c, label, cx, cy + 7f, 21f, 0xFF0B0F24.toInt(), Paint.Align.CENTER, fDisplay, .06f)
+            playPaint.style = Paint.Style.FILL; playPaint.alpha = 215
+            rect.set(b.l, b.t, b.r, b.b)
+            c.drawRoundRect(rect, rad, rad, playPaint)
+            playPaint.alpha = 255
+            liquid(c, b.l, b.t, b.r, b.b, rad, 0x01FFFFFF)
+            text(c, label, cx, cy + 7f, 21f, 0xFF04141C.toInt(), Paint.Align.CENTER, fDisplay, .06f)
         } else if (selected) {
-            cham(c, b.l, b.t, b.r, b.b, 8f, CYAN)
-            text(c, label, cx, cy + 5f, 14f, 0xFF0B0F24.toInt(), Paint.Align.CENTER, body, .12f)
+            liquid(c, b.l, b.t, b.r, b.b, rad, 0xA639E3FF.toInt())
+            text(c, label, cx, cy + 5f, 14f, WHITE, Paint.Align.CENTER, body, .12f)
         } else {
-            cham(c, b.l, b.t, b.r, b.b, 8f, CHIP)
-            chamS(c, b.l, b.t, b.r, b.b, 8f, 0x40FFFFFF, 1f)
-            text(c, label, cx, cy + 5f, 14f, DIM, Paint.Align.CENTER, body, .12f)
+            liquid(c, b.l, b.t, b.r, b.b, rad)
+            text(c, label, cx, cy + 5f, 14f, 0xFFD6E4F5.toInt(), Paint.Align.CENTER, body, .12f)
         }
     }
 
     private fun ghostBtn(c: Canvas, b: Btn, label: String) {
-        cham(c, b.l, b.t, b.r, b.b, 10f, CHIP)
-        chamS(c, b.l, b.t, b.r, b.b, 10f, 0x9939E3FF.toInt(), 1.3f)
+        liquid(c, b.l, b.t, b.r, b.b, (b.b - b.t) / 2f)
         text(c, label, (b.l + b.r) / 2f, (b.t + b.b) / 2f + 6f, 16f, WHITE, Paint.Align.CENTER, body, .12f)
     }
 
     private fun smallGhost(c: Canvas, b: Btn, label: String) {
-        cham(c, b.l, b.t, b.r, b.b, 7f, CHIP)
-        chamS(c, b.l, b.t, b.r, b.b, 7f, 0x9939E3FF.toInt(), 1.2f)
+        liquid(c, b.l, b.t, b.r, b.b, (b.b - b.t) / 2f)
         text(c, label, (b.l + b.r) / 2f, (b.t + b.b) / 2f + 4.5f, 12f, WHITE, Paint.Align.CENTER, body, .14f)
     }
 
@@ -1697,17 +1725,15 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         text(c, progress.count().toString() + "/" + SKINS.size + " UNLOCKED", 358f, 20f, 9f, LIME, Paint.Align.RIGHT, body, .12f)
         text(c, progress.get("kill").toString() + " KILLS   " + progress.get("win") + " WINS", 358f, 30f, 8f, DIM, Paint.Align.RIGHT, body, .1f)
         val nb = byId(menuBtns, "name")
-        cham(c, nb.l, nb.t, nb.r, nb.b, 7f, CHIP)
-        chamS(c, nb.l, nb.t, nb.r, nb.b, 7f, 0x6639E3FF, 1f)
-        text(c, "PILOT NAME", nb.l + 8f, nb.t + 8.5f, 6.5f, DIM, Paint.Align.LEFT, body, .2f)
-        text(c, g.myName, nb.l + 8f, nb.t + 20.5f, 11.5f, WHITE, Paint.Align.LEFT, body, .04f)
-        text(c, "EDIT", nb.r - 8f, nb.t + 20.5f, 8f, LIME, Paint.Align.RIGHT, body, .12f)
+        liquid(c, nb.l, nb.t, nb.r, nb.b, 12f)
+        text(c, "PILOT NAME", nb.l + 12f, nb.t + 10f, 6.5f, DIM, Paint.Align.LEFT, body, .2f)
+        text(c, g.myName, nb.l + 12f, nb.t + 21.5f, 11.5f, WHITE, Paint.Align.LEFT, body, .04f)
+        text(c, "EDIT", nb.r - 12f, nb.t + 21.5f, 8f, LIME, Paint.Align.RIGHT, body, .12f)
 
         // hero stage
-        cham(c, 12f, 40f, 176f, 228f, 16f, 0xCC0E1330.toInt())
-        chamS(c, 12f, 40f, 176f, 228f, 16f, (sk.c and 0xFFFFFF) or 0xCC000000.toInt(), 1.6f)
+        liquid(c, 12f, 40f, 176f, 228f, 26f, (sk.c and 0xFFFFFF) or 0x33000000)
         val chipW = h.role.length * 6.4f + 14f
-        cham(c, 18f, 46f, 18f + chipW, 59f, 5f, sk.c)
+        liquid(c, 18f, 46f, 18f + chipW, 59f, 6.5f, (sk.c and 0xFFFFFF) or 0xCC000000.toInt())
         text(c, h.role, 25f, 56f, 8.5f, dark, Paint.Align.LEFT, body, .16f)
         val badge = if (!open) "LOCKED" else if (browse == g.mySkin) "EQUIPPED" else ""
         if (badge.isNotEmpty()) text(c, badge, 170f, 56f, 8.5f, if (open) LIME else HOT, Paint.Align.RIGHT, body, .16f)
@@ -1724,7 +1750,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         drawSoldier(c, previewEnt, false)
         c.restore()
         if (!open) {
-            cham(c, 14f, 85f, 174f, 200f, 12f, 0xE6070A1C.toInt())
+            liquid(c, 14f, 85f, 174f, 200f, 18f, 0xD90A0F26.toInt())
             lock(c, 94f, 112f, 1.5f, WHITE)
             text(c, MILESTONES[browse].text.uppercase(), 94f, 148f, 10f, HOT, Paint.Align.CENTER, body, .08f)
             rr(c, 44f, 158f, 144f, 164f, 3f, 0x33FFFFFF)
@@ -1735,7 +1761,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         text(c, h.line2, 94f, 222f, 7.5f, DIM, Paint.Align.CENTER, body, .01f)
         for (id in arrayOf("prev", "next")) {
             val b = byId(menuBtns, id)
-            cham(c, b.l, b.t, b.r, b.b, 6f, CHIP)
+            liquid(c, b.l, b.t, b.r, b.b, 11f)
             val cx = (b.l + b.r) / 2f
             val d = if (id == "prev") -1f else 1f
             line(c, cx - 3f * d, 134f, cx + 3f * d, 141f, 2.6f, LIME); line(c, cx + 3f * d, 141f, cx - 3f * d, 148f, 2.6f, LIME)
@@ -1747,8 +1773,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         for ((k, t) in tiles.withIndex()) {
             val b = byId(menuBtns, t.first)
             val on = (g.menuRules == Rules.TEAM && k == 0) || (g.menuRules == Rules.SOLO && k == 1) || (g.menuRules == Rules.STORY && k == 2)
-            cham(c, b.l, b.t, b.r, b.b, 9f, if (on) LIME else CHIP)
-            if (!on) chamS(c, b.l, b.t, b.r, b.b, 9f, 0x40FFFFFF, 1f)
+            liquid(c, b.l, b.t, b.r, b.b, 16f, if (on) 0xB3D9FF3F.toInt() else 0)
             val tc = if (on) dark else DIM
             val cx = (b.l + b.r) / 2f
             when (k) {
@@ -1767,7 +1792,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
 
         // difficulty
         if (g.menuRules == Rules.STORY) {
-            cham(c, 188f, 124f, 468f, 153f, 8f, CHIP)
+            liquid(c, 188f, 124f, 468f, 153f, 14f)
             text(c, "Clear each wave to climb to the next tier.", 198f, 136f, 8.5f, WHITE, Paint.Align.LEFT, body, .02f)
             text(c, "Everyone down and it restarts from wave 1.", 198f, 148f, 8.5f, HOT, Paint.Align.LEFT, body, .02f)
         } else {
@@ -1785,8 +1810,12 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             val sx = SKINS[i]
             val u = progress.unlocked(i)
             val sel = i == browse
-            cham(c, b.l, b.t, b.r, b.b, 8f, if (sel) 0xFF1B2250.toInt() else CHIP)
-            chamS(c, b.l, b.t, b.r, b.b, 8f, if (sel) LIME else 0x33FFFFFF, if (sel) 2f else 1f)
+            liquid(c, b.l, b.t, b.r, b.b, 14f, if (sel) 0x40D9FF3F else 0)
+            if (sel) {
+                sp.shader = null; sp.strokeWidth = 1.8f; sp.color = LIME
+                rect.set(b.l + 1f, b.t + 1f, b.r - 1f, b.b - 1f)
+                c.drawRoundRect(rect, 13f, 13f, sp)
+            }
             val cx = (b.l + b.r) / 2f
             if (u) {
                 circo(c, cx, b.t + 18f, 10f, sx.c)
@@ -1856,8 +1885,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 } else {
                     for ((i, h) in hostList.take(3).withIndex()) {
                         val b = Btn("h$i", 36f, 84f + i * 56f, 444f, 130f + i * 56f)
-                        cham(c, b.l, b.t, b.r, b.b, 12f, CHIP)
-                        chamS(c, b.l, b.t, b.r, b.b, 12f, 0x9939E3FF.toInt(), 1.2f)
+                        liquid(c, b.l, b.t, b.r, b.b, 18f)
                         text(c, h.ip, b.l + 16f, b.t + 20f, 15f, WHITE, Paint.Align.LEFT, body)
                         text(c, rulesText(Rules.values().getOrElse(h.rules) { Rules.TEAM }), b.l + 16f, b.t + 37f, 11f, MUTED, Paint.Align.LEFT, body, .1f)
                         text(c, "${h.players}/${h.max}   JOIN", b.r - 16f, b.t + 30f, 16f, AMBER, Paint.Align.RIGHT, fDisplay)
@@ -1884,7 +1912,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
                 val labs = arrayOf("KILLS", "DEATHS", "TIME")
                 for (i in 0 until 3) {
                     val x0 = 36f + i * 138f
-                    cham(c, x0, 116f, x0 + 132f, 188f, 12f, CHIP)
+                    liquid(c, x0, 116f, x0 + 132f, 188f, 18f)
                     text(c, vals[i], x0 + 66f, 158f, 28f, WHITE, Paint.Align.CENTER, fDisplay)
                     text(c, labs[i], x0 + 66f, 178f, 11f, MUTED, Paint.Align.CENTER, body, .18f)
                 }
