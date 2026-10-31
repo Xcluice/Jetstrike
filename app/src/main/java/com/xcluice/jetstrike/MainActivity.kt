@@ -3,30 +3,46 @@ package com.xcluice.jetstrike
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.os.Build
+import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.widget.FrameLayout
 
 class MainActivity : Activity() {
     private lateinit var view: GameView
+    private lateinit var gl: GLSurfaceView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         view = GameView(this)
-        setContentView(view)
+        gl = GLSurfaceView(this)
+        gl.setEGLContextClientVersion(2)
+        gl.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
+        val w3 = World3D()
+        w3.view = gl
+        gl.setRenderer(w3)
+        gl.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+        view.world = w3
+        val root = FrameLayout(this)
+        root.addView(gl, FrameLayout.LayoutParams(-1, -1))
+        root.addView(view, FrameLayout.LayoutParams(-1, -1))
+        setContentView(root)
     }
 
     override fun onResume() {
         super.onResume()
+        gl.onResume()
         hideSystemUi()
     }
 
     override fun onPause() {
         view.autoPause()
+        gl.onPause()
         super.onPause()
     }
 

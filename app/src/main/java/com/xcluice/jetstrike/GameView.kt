@@ -10,6 +10,8 @@ import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PixelFormat
+import android.graphics.PorterDuff
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
@@ -33,6 +35,8 @@ import kotlin.math.sin
 class Btn(val id: String, val l: Float, val t: Float, val r: Float, val b: Float)
 
 class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnable {
+    /** The 3D world drawn underneath this view while a match is on. Null falls back to the old flat drawing. */
+    var world: World3D? = null
 
     private val game = Game()
     private val sfx = Sfx(ctx)
@@ -262,6 +266,9 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         limeP.shader = LinearGradient(0f, 0f, 480f, 0f, intArrayOf(LIME, 0xFF3FFFB0.toInt(), CYAN), floatArrayOf(0f, .6f, 1f), Shader.TileMode.CLAMP)
         wordP.shader = LinearGradient(16f, 0f, 140f, 0f, intArrayOf(LIME, CYAN), null, Shader.TileMode.CLAMP)
         holder.addCallback(this)
+        // the 2D layer sits on top of the OpenGL layer and is transparent wherever the 3D world should show
+        setZOrderOnTop(true)
+        holder.setFormat(PixelFormat.TRANSLUCENT)
         isFocusable = true
     }
 
@@ -873,7 +880,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         }
     }
 
-    private fun drawSoldier(c: Canvas, e: Ent, tags: Boolean = true) {
+    private fun drawSoldier(c: Canvas, e: Ent, tags: Boolean = true, body3d: Boolean = true) {
         val sk = e.skin
         val h = sk.h
         val hurt = e.hurt > 0f
@@ -895,7 +902,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         val armW = 6.6f * h.limb
         val armLen = 12f + (h.tw - 9.5f) * .5f
 
-        if (!blink) {
+        if (!blink && body3d) {
             c.save()
             c.translate(e.x, e.y)
             if (e.sc != 1f) c.scale(e.sc, e.sc)
@@ -969,6 +976,12 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             c.restore()
         }
         if (!tags) return
+        if (!body3d && team && e.onG && !blink) {
+            sp.shader = null; sp.strokeWidth = 2f; sp.color = (0xAA shl 24) or (teamCol and 0x00FFFFFF)
+            val rw = (15f + (h.tw - 9.5f)) * h.scale
+            rect.set(e.x - rw, e.y - 2.5f, e.x + rw, e.y + 4.5f)
+            c.drawOval(rect, sp)
+        }
         // marker: your name and an arrow, name and health for everyone else
         c.save()
         c.translate(e.x, e.y - (e.sc - 1f) * 58f - (h.top * h.scale - 54.5f) * e.sc)
@@ -1941,20 +1954,46 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     }
 
     /* ---------- frame ---------- */
+    /** Copies what the 3D layer needs into an immutable snapshot and hands it to the GL thread. */
+    private fun submit3d(w3: World3D, camX: Float, camY: Float) {
+        val sol = ArrayList<SoldierSnap>()
+        for (e in game.ents) {
+            if (!e.alive) continue
+            val blink = e.inv > 0f && floor(game.t * 14f).toInt() % 2 == 1
+            sol.add(SoldierSnap(e.id, e.skin, e.x, e.y, e.vx, e.onG, e.run, e.aim, e.jetting, e.hurt > 0f, blink,
+                e.sc, e.flash, e.wp, e.boss))
+        }
+        val pk = ArrayList<PickSnap>()
+        for (p0 in game.picks) pk.add(PickSnap(p0.t, p0.x, p0.y, p0.cd <= 0f))
+        val gr = ArrayList<GrenSnap>()
+        for (g in game.grenades) gr.add(GrenSnap(g.x, g.y, g.fuse))
+        w3.submit(Snap(camX, camY, game.vw, game.vh, game.t, Terrain.mapId, Terrain.version, Terrain.polys,
+            Terrain.windows, Terrain.worldW, Terrain.worldH, sol, pk, gr))
+    }
+
     private fun render(c: Canvas) {
         hostList = if (game.mode == Mode.JOIN) (game.net?.liveHosts() ?: emptyList()) else emptyList()
-        c.drawColor(0xFF04141C.toInt())
-        drawBackground(c)
+        val w3 = world
+        val in3d = w3 != null && (game.mode == Mode.PLAY || game.mode == Mode.OVER)
+        if (in3d) c.drawColor(0, PorterDuff.Mode.CLEAR) else {
+            c.drawColor(0xFF04141C.toInt())
+            drawBackground(c)
+        }
         c.save()
         c.scale(scale, scale)
         val sh = game.shake
         val ox = if (sh > .1f) rnd(-sh, sh) else 0f
         val oy = if (sh > .1f) rnd(-sh, sh) else 0f
         c.translate(-game.camX + ox, -game.camY + oy)
-        drawPlatforms(c)
-        drawPicks(c)
-        drawGrenades(c)
-        for (e in game.ents) if (e.alive) drawSoldier(c, e)
+        if (in3d && w3 != null) {
+            submit3d(w3, game.camX - ox, game.camY - oy)
+            for (e in game.ents) if (e.alive) drawSoldier(c, e, true, false)
+        } else {
+            drawPlatforms(c)
+            drawPicks(c)
+            drawGrenades(c)
+            for (e in game.ents) if (e.alive) drawSoldier(c, e)
+        }
         drawBullets(c)
         drawParts(c)
         drawDamageTexts(c)
