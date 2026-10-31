@@ -141,6 +141,14 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     // hud geometry (screen px), refreshed every frame
     private val pauseR = RectF()
     private val muteR = RectF()
+    private val viewR = RectF()
+    /** 0 side view, 1 behind the shoulder, 2 first person */
+    private var viewMode = 0
+    private var camYaw = 0f
+    private var camPitch = 0f
+    private var camNs = 0L
+    private val vpM = FloatArray(16)
+    private val pj = FloatArray(3)
     private val grenR = RectF()
     private val reloadR = RectF()
     private val slotR = arrayOf(RectF(), RectF())
@@ -270,6 +278,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         setZOrderOnTop(true)
         holder.setFormat(PixelFormat.TRANSLUCENT)
         isFocusable = true
+        viewMode = prefs.getInt("view", 0).coerceIn(0, 2)
     }
 
     /* ---------- lifecycle ---------- */
@@ -1154,6 +1163,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         val bs = dp(42f)
         pauseR.set(W - mr - bs, top, W - mr, top + bs)
         muteR.set(W - mr - bs * 2f - dp(8f), top, W - mr - bs - dp(8f), top + bs)
+        viewR.set(W - mr - bs * 3f - dp(16f), top, W - mr - bs * 2f - dp(16f), top + bs)
         val m = ctl.getValue("move")
         lcx = m.fx * W; lcy = m.fy * H; lR = dp(56f) * m.s
         val a = ctl.getValue("aim")
@@ -1485,6 +1495,10 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         // tools
         glass(c, pauseR.left, pauseR.top, pauseR.right, pauseR.bottom, dp(14f), dp(1f))
         glass(c, muteR.left, muteR.top, muteR.right, muteR.bottom, dp(14f), dp(1f))
+        if (world != null) {
+            glass(c, viewR.left, viewR.top, viewR.right, viewR.bottom, dp(14f), dp(1f))
+            text(c, when (viewMode) { 1 -> "3P"; 2 -> "1P"; else -> "SIDE" }, viewR.centerX(), viewR.centerY() + dp(4.5f), dp(12f), WHITE, Paint.Align.CENTER, body)
+        }
         val pcx = pauseR.centerX()
         val pcy = pauseR.centerY()
         line(c, pcx - dp(4f), pcy - dp(7f), pcx - dp(4f), pcy + dp(7f), dp(3f), WHITE)
@@ -1954,8 +1968,113 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     }
 
     /* ---------- frame ---------- */
+    private fun tanHalf(deg: Float): Float = Math.tan(Math.toRadians(deg / 2.0)).toFloat()
+
+    /** Camera for the behind-shoulder and first-person views; it follows the aim direction of the player. */
+    private fun computeCam(): Cam? {
+        val pl = game.player
+        if (!pl.alive) return null
+        val h = pl.skin.h
+        val k = h.scale * pl.sc
+        val now = System.nanoTime()
+        val dt = if (camNs == 0L) .016f else min(.05f, (now - camNs) / 1e9f)
+        camNs = now
+        val ce = cos(pl.aim)
+        val se = -sin(pl.aim)
+        val yawT = if (ce >= 0f) 0f else PI_F
+        var dy = yawT - camYaw
+        while (dy > PI_F) dy -= 2f * PI_F
+        while (dy < -PI_F) dy += 2f * PI_F
+        if (abs(dy) > 3.1f) dy = abs(dy)
+        val kk = min(1f, dt * 12f)
+        camYaw += dy * kk
+        val pitT = atan2(se, abs(ce)).coerceIn(-1.25f, 1.25f)
+        camPitch += (pitT - camPitch) * kk
+        val cp = cos(camPitch)
+        val fx = cp * cos(camYaw); val fy = sin(camPitch); val fz = cp * sin(camYaw)
+        var rx = -fz; var rz = fx
+        val rl = max(1e-3f, hypot(rx, rz))
+        rx /= rl; rz /= rl
+        val sx = pl.x
+        val sy = -pl.y + h.shoulder * k
+        val ex: Float; val ey: Float; val ez: Float
+        val base: Float
+        if (viewMode == 1) {
+            ex = sx - fx * (95f * k + 10f) + rx * 22f * k
+            ey = sy - fy * (95f * k + 10f) + 28f * k
+            ez = -fz * (95f * k + 10f) + rz * 22f * k
+            base = 62f
+        } else {
+            val hy = -pl.y + h.headCy * k
+            ex = pl.x + fx * 4f * k - rx * 7f * k
+            ey = hy + fy * 4f * k
+            ez = fz * 4f * k - rz * 7f * k
+            base = 74f
+        }
+        val th = tanHalf(base) * 4f / max(1f, game.zoomCur)
+        val fov = (2.0 * Math.toDegrees(Math.atan(th.toDouble()))).toFloat()
+        return Cam(ex, ey, ez, sx + fx * 800f, sy + fy * 800f, fz * 800f, fov, viewMode, camPitch)
+    }
+
+    private fun project(cam: Cam, x: Float, y: Float, z: Float): Boolean {
+        val m = vpM
+        val cx = m[0] * x + m[4] * y + m[8] * z + m[12]
+        val cy = m[1] * x + m[5] * y + m[9] * z + m[13]
+        val cw = m[3] * x + m[7] * y + m[11] * z + m[15]
+        if (cw <= 8f) return false
+        pj[0] = (cx / cw * .5f + .5f) * W
+        pj[1] = (1f - (cy / cw * .5f + .5f)) * H
+        pj[2] = ((H / 2f) / (cam.tanHalf() * cw)).coerceIn(.8f, 2.6f)
+        return true
+    }
+
+    private fun drawTags3d(c: Canvas, cam: Cam) {
+        val team = game.rules == Rules.TEAM
+        for (e in game.ents) {
+            if (!e.alive || game.isMe(e)) continue
+            val h = e.skin.h
+            if (!project(cam, e.x, -e.y + h.top * h.scale * e.sc + 12f, 0f)) continue
+            val ally = e.team == game.player.team
+            val nameCol = if (team) (if (ally) TEAL else RED) else 0xE6FFFFFF.toInt()
+            c.save()
+            c.translate(pj[0], pj[1])
+            c.scale(pj[2], pj[2])
+            text(c, game.nameOf(e.id), 0f, -6f, 12f, nameCol, Paint.Align.CENTER, body)
+            rr(c, -18f, -3f, 18f, 2f, 2.5f, 0x80000000.toInt())
+            val hpCol = if (e.hp > e.maxHp * .5f) 0xFF5EE06B.toInt() else if (e.hp > e.maxHp * .25f) 0xFFFFD23F.toInt() else RED
+            rr(c, -18f, -3f, -18f + max(0f, 36f * e.hp / e.maxHp), 2f, 2.5f, hpCol)
+            c.restore()
+        }
+    }
+
+    private fun drawDamage3d(c: Canvas, cam: Cam) {
+        for (dt in game.texts) {
+            if (!project(cam, dt.x, -dt.y, 0f)) continue
+            val a = max(0f, min(1f, dt.l * 1.7f))
+            val sz = 19f * (1f + max(0f, dt.l - .82f) * 2.6f) * pj[2]
+            tp.shader = null
+            tp.typeface = fDisplay; tp.textSize = sz; tp.textAlign = Paint.Align.CENTER; tp.letterSpacing = 0f
+            tp.style = Paint.Style.STROKE; tp.strokeWidth = sz * .22f
+            tp.color = ((a * 210f).toInt() shl 24) or 0x061018
+            c.drawText(dt.text, pj[0], pj[1], tp)
+            tp.style = Paint.Style.FILL
+            tp.color = ((a * 255f).toInt() shl 24) or (dt.col and 0x00FFFFFF)
+            c.drawText(dt.text, pj[0], pj[1], tp)
+        }
+    }
+
+    private fun drawCross(c: Canvas) {
+        if (!game.player.alive) return
+        val cx = W / 2f
+        val cy = H / 2f
+        sp.shader = null; sp.strokeWidth = dp(1.6f); sp.color = 0xCCFFFFFF.toInt()
+        c.drawCircle(cx, cy, dp(7f), sp)
+        c.drawLine(cx - dp(16f), cy, cx - dp(9f), cy, sp); c.drawLine(cx + dp(9f), cy, cx + dp(16f), cy, sp)
+        c.drawLine(cx, cy - dp(16f), cx, cy - dp(9f), sp); c.drawLine(cx, cy + dp(9f), cx, cy + dp(16f), sp)
+    }
+
     /** Copies what the 3D layer needs into an immutable snapshot and hands it to the GL thread. */
-    private fun submit3d(w3: World3D, camX: Float, camY: Float) {
+    private fun submit3d(w3: World3D, camX: Float, camY: Float, cam: Cam?) {
         val sol = ArrayList<SoldierSnap>()
         for (e in game.ents) {
             if (!e.alive) continue
@@ -1967,8 +2086,14 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         for (p0 in game.picks) pk.add(PickSnap(p0.t, p0.x, p0.y, p0.cd <= 0f))
         val gr = ArrayList<GrenSnap>()
         for (g in game.grenades) gr.add(GrenSnap(g.x, g.y, g.fuse))
+        val bl = ArrayList<BulletSnap>()
+        val pt = ArrayList<PartSnap>()
+        if (cam != null) {
+            for (b in game.bullets) bl.add(BulletSnap(b.x, b.y, b.vx, b.vy, b.kind, b.big))
+            for (q in game.parts) pt.add(PartSnap(q.x, q.y, max(0f, q.l / q.m), if (q.glow) q.s * (.4f + max(0f, q.l / q.m) * .6f) else q.s, q.c))
+        }
         w3.submit(Snap(camX, camY, game.vw, game.vh, game.t, Terrain.mapId, Terrain.version, Terrain.polys,
-            Terrain.windows, Terrain.worldW, Terrain.worldH, sol, pk, gr))
+            Terrain.windows, Terrain.worldW, Terrain.worldH, sol, pk, gr, cam, bl, pt, game.player.id))
     }
 
     private fun render(c: Canvas) {
@@ -1979,25 +2104,39 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             c.drawColor(0xFF04141C.toInt())
             drawBackground(c)
         }
+        val cam = if (in3d && viewMode != 0) computeCam() else null
         c.save()
-        c.scale(scale, scale)
         val sh = game.shake
         val ox = if (sh > .1f) rnd(-sh, sh) else 0f
         val oy = if (sh > .1f) rnd(-sh, sh) else 0f
-        c.translate(-game.camX + ox, -game.camY + oy)
+        if (cam == null) {
+            c.scale(scale, scale)
+            c.translate(-game.camX + ox, -game.camY + oy)
+        }
         if (in3d && w3 != null) {
-            submit3d(w3, game.camX - ox, game.camY - oy)
-            for (e in game.ents) if (e.alive) drawSoldier(c, e, true, false)
+            submit3d(w3, game.camX - ox, game.camY - oy, cam)
+            if (cam == null) {
+                for (e in game.ents) if (e.alive) drawSoldier(c, e, true, false)
+                drawBullets(c)
+                drawParts(c)
+                drawDamageTexts(c)
+                if (game.mode == Mode.PLAY && !game.paused && abs(game.zoomCur - 4f) < .2f) drawAim(c)
+            } else {
+                cam.vp(W / H, vpM)
+                drawTags3d(c, cam)
+                drawDamage3d(c, cam)
+                if (game.mode == Mode.PLAY && !game.paused) drawCross(c)
+            }
         } else {
             drawPlatforms(c)
             drawPicks(c)
             drawGrenades(c)
             for (e in game.ents) if (e.alive) drawSoldier(c, e)
+            drawBullets(c)
+            drawParts(c)
+            drawDamageTexts(c)
+            if (game.mode == Mode.PLAY && !game.paused && abs(game.zoomCur - 4f) < .2f) drawAim(c)
         }
-        drawBullets(c)
-        drawParts(c)
-        drawDamageTexts(c)
-        if (game.mode == Mode.PLAY && !game.paused && abs(game.zoomCur - 4f) < .2f) drawAim(c)
         c.restore()
         drawScope(c)
         if (game.mode == Mode.PLAY || game.mode == Mode.OVER) {
@@ -2114,6 +2253,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             // on-screen buttons first
             if (pauseR.contains(x, y)) { btnPtr = id; btnKind = "pause"; return }
             if (muteR.contains(x, y)) { btnPtr = id; btnKind = "mute"; return }
+            if (world != null && viewR.contains(x, y)) { btnPtr = id; btnKind = "view"; return }
             if (grenR.contains(x, y)) { btnPtr = id; btnKind = "gren"; return }
             if (reloadR.contains(x, y)) { btnPtr = id; btnKind = "reload"; return }
             if (scopeR.contains(x, y)) { btnPtr = id; btnKind = "scope"; return }
@@ -2169,6 +2309,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             val hit = when (kind) {
                 "pause" -> pauseR.contains(x, y)
                 "mute" -> muteR.contains(x, y)
+                "view" -> viewR.contains(x, y)
                 "gren" -> grenR.contains(x, y)
                 "reload" -> reloadR.contains(x, y)
                 "scope" -> scopeR.contains(x, y)
@@ -2180,6 +2321,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             if (hit) when (kind) {
                 "pause" -> actions.add(Runnable { g.pause() })
                 "mute" -> sfx.muted = !sfx.muted
+                "view" -> { viewMode = (viewMode + 1) % 3; prefs.edit().putInt("view", viewMode).apply() }
                 "gren" -> actions.add(Runnable { g.reqG++ })
                 "reload" -> actions.add(Runnable { g.reqR++ })
                 "scope" -> actions.add(Runnable { g.scopeStep() })

@@ -170,6 +170,48 @@ object TerrainMesh {
         }
     }
 
+    const val ZH = 70f
+
+    /**
+     * Version for the behind-shoulder and first-person cameras: the level becomes a real corridor. Solids are extruded
+     * both ways from the play plane, and the sides, ends and floor are closed with big rock panels.
+     */
+    fun build3p(polys: List<TPoly>, worldW: Float, worldH: Float, arena: Boolean): Result {
+        val solid = MeshB()
+        val back = MeshB()
+        val rock = if (arena) 0xFF6A5A66.toInt() else 0xFF8C8272.toInt()
+        val conc = if (arena) 0xFF59606E.toInt() else 0xFF9AA2A8.toInt()
+        val wood = 0xFF93663C.toInt()
+        val caveC = if (arena) 0xFF2A1A30.toInt() else 0xFF4A4238.toInt()
+        val roomC = if (arena) 0xFF332238.toInt() else 0xFF6E7378.toInt()
+        for (pl in polys) {
+            val o = outline(pl)
+            if (o.size < 6) continue
+            when (pl.cls) {
+                4, 5 -> { back.color(if (pl.cls == 4) caveC else roomC); cap(back, o, -ZH - 3.2f, 1f) }
+                1, 2, 3 -> {
+                    val c = when (pl.cls) { 1 -> rock; 2 -> conc; else -> wood }
+                    solid.color(c); cap(solid, o, ZH, 1f)
+                    solid.color(tint(c, 0.8f)); cap(solid, o, -ZH, -1f)
+                    solid.color(tint(c, 0.9f)); walls(solid, o, pl.smooth, -ZH, ZH)
+                }
+            }
+        }
+        val pc = if (arena) 0xFF3A2A44.toInt() else 0xFF6E6A60.toInt()
+        val top = 900f
+        val bot = -(worldH + 300f)
+        val cy = (top + bot) / 2f
+        val hh = top - bot
+        val wx = worldW + 400f
+        back.color(pc); back.push(); back.translate(worldW / 2f, cy, -ZH - 5f); back.box(wx, hh, 2f); back.pop()
+        back.color(tint(pc, .85f)); back.push(); back.translate(worldW / 2f, cy, ZH + 5f); back.box(wx, hh, 2f); back.pop()
+        back.color(tint(pc, .7f))
+        back.push(); back.translate(-1f, cy, 0f); back.box(2f, hh, 2f * ZH + 12f); back.pop()
+        back.push(); back.translate(worldW + 1f, cy, 0f); back.box(2f, hh, 2f * ZH + 12f); back.pop()
+        back.color(tint(pc, .6f)); back.push(); back.translate(worldW / 2f, -worldH - 1f, 0f); back.box(wx, 2f, 2f * ZH + 12f); back.pop()
+        return Result(solid.build(), back.build(), MeshB().build(), emptyList())
+    }
+
     fun build(polys: List<TPoly>, windows: List<FloatArray>, worldW: Float, worldH: Float, arena: Boolean): Result {
         val solid = MeshB()
         val back = MeshB()

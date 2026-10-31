@@ -31,11 +31,28 @@ class SoldierSnap(
 class PickSnap(val t: String, val x: Float, val y: Float, val on: Boolean)
 class GrenSnap(val x: Float, val y: Float, val fuse: Float)
 
+class BulletSnap(val x: Float, val y: Float, val vx: Float, val vy: Float, val kind: Int, val big: Boolean)
+class PartSnap(val x: Float, val y: Float, val a: Float, val s: Float, val c: Int)
+
+/** A perspective camera for the behind-shoulder (mode 1) and first-person (mode 2) views. */
+class Cam(val ex: Float, val ey: Float, val ez: Float, val tx: Float, val ty: Float, val tz: Float,
+          val fov: Float, val mode: Int, val pitch: Float) {
+    fun tanHalf(): Float = tan(Math.toRadians(fov / 2.0)).toFloat()
+    fun view(out: FloatArray) = Matrix.setLookAtM(out, 0, ex, ey, ez, tx, ty, tz, 0f, 1f, 0f)
+    fun vp(aspect: Float, out: FloatArray) {
+        val v = FloatArray(16); val p = FloatArray(16)
+        view(v)
+        Matrix.perspectiveM(p, 0, fov, aspect, 8f, 2600f)
+        Matrix.multiplyMM(out, 0, p, 0, v, 0)
+    }
+}
+
 class Snap(
     val camX: Float, val camY: Float, val vw: Float, val vh: Float, val t: Float,
     val mapId: Int, val version: Int, val polys: List<TPoly>, val windows: List<FloatArray>,
     val worldW: Float, val worldH: Float,
-    val soldiers: List<SoldierSnap>, val picks: List<PickSnap>, val grens: List<GrenSnap>
+    val soldiers: List<SoldierSnap>, val picks: List<PickSnap>, val grens: List<GrenSnap>,
+    val cam: Cam? = null, val bullets: List<BulletSnap> = emptyList(), val parts: List<PartSnap> = emptyList(), val meId: Int = -1
 )
 
 /**
@@ -72,6 +89,9 @@ class World3D : GLSurfaceView.Renderer {
 
     private var terr: TerrainMesh.Result? = null
     private var terrVer = -1
+    private var terr3: TerrainMesh.Result? = null
+    private var terr3Ver = -1
+    private val vm = FloatArray(16)
     private var lastT = 0f
 
     private class HeroGfx(val m: HeroModel, val segs: List<Mesh3>) {
@@ -100,7 +120,7 @@ class World3D : GLSurfaceView.Renderer {
         // a new context: everything uploaded before is gone
         for (m in registry) m.vbo = 0
         registry.clear()
-        heroes.clear(); guns.clear(); terr = null; terrVer = -1
+        heroes.clear(); guns.clear(); terr = null; terrVer = -1; terr3 = null; terr3Ver = -1
 
         val vs = """
             uniform mat4 uVP; uniform mat4 uM; uniform mat3 uN;
@@ -133,6 +153,9 @@ class World3D : GLSurfaceView.Renderer {
                 } else if (uMode < 2.5) {
                     col = vC * uTint.rgb;
                     a = uTint.a;
+                } else if (uMode > 3.5) {
+                    col = vC;
+                    a = texture2D(uGlow, vT).a * uTint.a;
                 } else {
                     col = uTint.rgb;
                     a = texture2D(uGlow, vT).a * uTint.a;
@@ -345,13 +368,28 @@ class World3D : GLSurfaceView.Renderer {
         }
 
         // camera: the z = 0 plane maps exactly onto the 2D transform
-        val fov = 38f
-        val d = (s.vh / 2f) / tan(Math.toRadians(fov / 2.0).toFloat())
-        val cx = s.camX + s.vw / 2f
-        val cy = -(s.camY + s.vh / 2f)
-        Matrix.setLookAtM(viewM, 0, cx, cy, d, cx, cy, 0f, 0f, 1f, 0f)
-        Matrix.perspectiveM(proj, 0, fov, sw.toFloat() / sh.toFloat(), 40f, 7000f)
-        Matrix.multiplyMM(vp, 0, proj, 0, viewM, 0)
+        val cam = s.cam
+        if (cam == null) {
+            val fov = 38f
+            val d = (s.vh / 2f) / tan(Math.toRadians(fov / 2.0).toFloat())
+            val cx = s.camX + s.vw / 2f
+            val cy = -(s.camY + s.vh / 2f)
+            Matrix.setLookAtM(viewM, 0, cx, cy, d, cx, cy, 0f, 0f, 1f, 0f)
+            Matrix.perspectiveM(proj, 0, fov, sw.toFloat() / sh.toFloat(), 40f, 7000f)
+            Matrix.multiplyMM(vp, 0, proj, 0, viewM, 0)
+        } else {
+            cam.view(viewM)
+            Matrix.perspectiveM(proj, 0, cam.fov, sw.toFloat() / sh.toFloat(), 8f, 2600f)
+            Matrix.multiplyMM(vp, 0, proj, 0, viewM, 0)
+            GLES20.glUniform2f(uFogR, 160f, 1700f)
+            if (terr3 == null || terr3Ver != s.version) {
+                terr3?.let { t -> registry.remove(t.solid); registry.remove(t.back) }
+                val t3 = try { TerrainMesh.build3p(s.polys, s.worldW, s.worldH, arena) } catch (e: Exception) { null }
+                if (t3 != null) { registry.add(t3.solid); registry.add(t3.back) }
+                terr3 = t3
+                terr3Ver = s.version
+            }
+        }
 
         val dt = if (lastT > 0f && s.t >= lastT) min(.1f, s.t - lastT) else 0f
         lastT = s.t
@@ -359,12 +397,12 @@ class World3D : GLSurfaceView.Renderer {
         // sky and clouds (screen space, no depth)
         GLES20.glDisable(GLES20.GL_DEPTH_TEST)
         GLES20.glUniformMatrix4fv(uVP, 1, false, ident, 0)
-        drawSky(arena)
+        drawSky(arena, if (cam == null) 0f else -tan(cam.pitch.toDouble()).toFloat() / cam.tanHalf(), cam != null)
         GLES20.glUniformMatrix4fv(uVP, 1, false, vp, 0)
-        drawClouds(s, arena)
+        if (cam == null) drawClouds(s, arena)
         GLES20.glEnable(GLES20.GL_DEPTH_TEST)
 
-        val tm = terr
+        val tm = if (cam == null) terr else terr3
         if (tm != null) {
             for (r in tm.ridges) draw(r, ident, 2, 1f, 1f, 1f, 1f)
             draw(tm.back, ident, 1)
@@ -408,7 +446,15 @@ class World3D : GLSurfaceView.Renderer {
                 draw(quad, sc(tr(ident, g.x, -g.y - 7f, 0f), 15f, 5f, 1f), 3, 0f, 0f, 0f, .3f)
             })
         }
-        for (e in s.soldiers) drawSoldier(s, e, dt, blended)
+        val shd = if (cam != null) MeshB() else null
+        for (e in s.soldiers) drawSoldier(s, e, dt, blended, cam, e.id == s.meId, shd)
+        if (cam != null) {
+            if (shd != null) {
+                val sm = shd.build()
+                if (sm.count > 0) { draw(sm, ident, 3, 0f, 0f, 0f, .4f); GLES20.glDeleteBuffers(1, intArrayOf(sm.vbo), 0) }
+            }
+            drawDyn(s, cam)
+        }
 
         // transparent bits last, without writing depth
         GLES20.glDepthMask(false)
@@ -418,7 +464,7 @@ class World3D : GLSurfaceView.Renderer {
         GLES20.glDisableVertexAttribArray(aT); GLES20.glDisableVertexAttribArray(aC)
     }
 
-    private fun drawSky(arena: Boolean) {
+    private fun drawSky(arena: Boolean, shift: Float = 0f, tall: Boolean = false) {
         val top: Int; val mid: Int; val hor: Int
         if (arena) { top = 0xFF080506.toInt(); mid = 0xFF2A1018.toInt(); hor = 0xFF6A2A2E.toInt() }
         else { top = 0xFF6F9BC2.toInt(); mid = 0xFFAEC7D4.toInt(); hor = 0xFFDFE9E8.toInt() }
@@ -438,7 +484,8 @@ class World3D : GLSurfaceView.Renderer {
                 skyArena = arena
 
         }
-        draw(skyMesh, ident, 2)
+        draw(skyMesh, if (tall) sc(tr(ident, 0f, shift, 0f), 1f, 3f, 1f) else ident, 2)
+        if (tall) return
         // sun
         val sun = sc(tr(ident, .55f, .45f, 0f), .55f * (sh.toFloat() / sw.toFloat()) * 2.2f, 1.1f, 1f)
         if (!arena) draw(quad, sun, 3, 1f, .96f, .82f, .75f) else draw(quad, sun, 3, 1f, .4f, .35f, .35f)
@@ -459,7 +506,7 @@ class World3D : GLSurfaceView.Renderer {
         }
     }
 
-    private fun drawSoldier(s: Snap, e: SoldierSnap, dt: Float, blended: ArrayList<Runnable>) {
+    private fun drawSoldier(s: Snap, e: SoldierSnap, dt: Float, blended: ArrayList<Runnable>, cam: Cam?, isMe: Boolean, shd: MeshB?) {
         val sk = e.skin
         val h = sk.h
         val gfx = hero(sk)
@@ -476,15 +523,23 @@ class World3D : GLSurfaceView.Renderer {
         val flash = if (e.hurt) .85f else 0f
 
         // ground shadow
-        if (e.onG) blended.add(Runnable { draw(quad, sc(tr(ident, e.x, -e.y + 1f, 2f), 30f * k, 8f * k, 1f), 3, 0f, 0f, 0f, .38f) })
+        if (cam == null) {
+            if (e.onG) blended.add(Runnable { draw(quad, sc(tr(ident, e.x, -e.y + 1f, 2f), 30f * k, 8f * k, 1f), 3, 0f, 0f, 0f, .38f) })
+        } else if (e.onG && shd != null) {
+            val r = 15f * k
+            val y = -e.y + 0.8f
+            shd.v(e.x - r, y, -r, 0f, 1f, 0f, 0f, 0f); shd.v(e.x + r, y, -r, 0f, 1f, 0f, 1f, 0f); shd.v(e.x + r, y, r, 0f, 1f, 0f, 1f, 1f)
+            shd.v(e.x - r, y, -r, 0f, 1f, 0f, 0f, 0f); shd.v(e.x + r, y, r, 0f, 1f, 0f, 1f, 1f); shd.v(e.x - r, y, r, 0f, 1f, 0f, 0f, 1f)
+        }
         if (e.hidden) return
+        val fpp = cam != null && cam.mode == 2 && isMe
 
         val m0 = ry(sc(tr(ident, e.x, -e.y + bob * k, 0f), k, k, k), ny)
-        draw(hm.body, m0, 0, flash = flash)
+        if (!fpp) draw(hm.body, m0, 0, flash = flash)
 
         // legs swing on their hip pivots
         val stride = h.hip / 17f
-        for (i in 0 until 2) {
+        if (!fpp) for (i in 0 until 2) {
             val back = i == 1
             val ph = if (back) e.run + PI.toFloat() else e.run
             val ang: Float = if (e.onG && !moving) (if (back) -0.12f else 0.12f)
@@ -515,7 +570,7 @@ class World3D : GLSurfaceView.Renderer {
         }
 
         // cloth: scarves and capes trail behind
-        if (hm.cloths.isNotEmpty()) {
+        if (!fpp && hm.cloths.isNotEmpty()) {
             val wind = (e.vx * dir / 260f).coerceIn(-1f, 1f)
             for ((ci, cl) in hm.cloths.withIndex()) {
                 var cm = tr(m0, cl.x, cl.y, cl.z)
@@ -529,7 +584,7 @@ class World3D : GLSurfaceView.Renderer {
         }
 
         // jet flames
-        if (e.jetting) {
+        if (e.jetting && !fpp) {
             for (f in hm.flames) {
                 val fl = (14f + (sin(s.t * 40f + f[2]) * .5f + .5f) * 10f) * (.8f + h.pack * .2f)
                 val fm = tr(m0, f[0], f[1] - fl / 2f, f[2])
@@ -543,5 +598,62 @@ class World3D : GLSurfaceView.Renderer {
                 })
             }
         }
+    }
+
+    /** Bullets and particles as camera-facing glow quads (additive), for the perspective views. */
+    private fun drawDyn(s: Snap, cam: Cam) {
+        val rx = viewM[0]; val ry = viewM[4]; val rz = viewM[8]
+        val ux = viewM[1]; val uy = viewM[5]; val uz = viewM[9]
+        val b = MeshB()
+        fun bb(x: Float, y: Float, z: Float, w: Float, c: Int, k: Float) {
+            b.color(((((c shr 16) and 255) * k).toInt() shl 16) or ((((c shr 8) and 255) * k).toInt() shl 8) or (((c and 255) * k).toInt()))
+            val hx = w / 2f
+            fun pv(sx: Float, sy: Float, u: Float, v: Float) =
+                b.v(x + rx * hx * sx + ux * hx * sy, y + ry * hx * sx + uy * hx * sy, z + rz * hx * sx + uz * hx * sy, 0f, 0f, 1f, u, v)
+            pv(-1f, -1f, 0f, 0f); pv(1f, -1f, 1f, 0f); pv(1f, 1f, 1f, 1f)
+            pv(-1f, -1f, 0f, 0f); pv(1f, 1f, 1f, 1f); pv(-1f, 1f, 0f, 1f)
+        }
+        fun ribbon(ax: Float, ay: Float, bx: Float, by: Float, w: Float, c: Int) {
+            val dx = bx - ax; val dy = by - ay
+            val l = sqrt(dx * dx + dy * dy)
+            if (l < 1e-3f) return
+            val mx = (ax + bx) / 2f; val my = (ay + by) / 2f
+            val tx = cam.ex - mx; val ty = cam.ey - my; val tz = cam.ez
+            // side = dir x toEye
+            var sx = (dy / l) * tz - 0f * ty
+            var sy = 0f * tx - (dx / l) * tz
+            var sz = (dx / l) * ty - (dy / l) * tx
+            val sl = sqrt(sx * sx + sy * sy + sz * sz)
+            if (sl < 1e-4f) return
+            sx = sx / sl * w / 2f; sy = sy / sl * w / 2f; sz = sz / sl * w / 2f
+            b.color(c)
+            b.v(ax + sx, ay + sy, sz, 0f, 0f, 1f, 0f, 0f); b.v(ax - sx, ay - sy, -sz, 0f, 0f, 1f, 1f, 0f); b.v(bx - sx, by - sy, -sz, 0f, 0f, 1f, 1f, 1f)
+            b.v(ax + sx, ay + sy, sz, 0f, 0f, 1f, 0f, 0f); b.v(bx - sx, by - sy, -sz, 0f, 0f, 1f, 1f, 1f); b.v(bx + sx, by + sy, sz, 0f, 0f, 1f, 0f, 1f)
+        }
+        for (bl in s.bullets) {
+            val sp = max(1f, sqrt(bl.vx * bl.vx + bl.vy * bl.vy))
+            val dx = bl.vx / sp; val dy = -bl.vy / sp
+            val x = bl.x; val y = -bl.y
+            when (bl.kind) {
+                1 -> { ribbon(x, y, x - dx * 46f, y - dy * 46f, 14f, 0xFFFF9B3D.toInt()); bb(x, y, 0f, 24f, 0xFFFFC070.toInt(), 1f) }
+                2 -> { bb(x, y, 0f, 30f, 0xFFFF6A2D.toInt(), .8f); bb(x, y, 0f, 14f, 0xFFFFF0AA.toInt(), 1f) }
+                3 -> { ribbon(x, y, x - dx * 70f, y - dy * 70f, 9f, 0xFF20D8F0.toInt()); ribbon(x, y, x - dx * 70f, y - dy * 70f, 3f, 0xFFFFFFFF.toInt()) }
+                else -> {
+                    val len = if (bl.big) 46f else 34f
+                    ribbon(x, y, x - dx * len, y - dy * len, if (bl.big) 9f else 6.5f, 0xFFFFC85A.toInt())
+                    ribbon(x, y, x - dx * len * .6f, y - dy * len * .6f, 3f, 0xFFFFFBE0.toInt())
+                }
+            }
+        }
+        for (pt in s.parts) {
+            val a = pt.a.coerceIn(0f, 1f)
+            bb(pt.x, -pt.y, 0f, max(2f, pt.s * 3f), pt.c, a)
+        }
+        val m = b.build()
+        if (m.count == 0) return
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE)
+        draw(m, ident, 4, 1f, 1f, 1f, 1f)
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        GLES20.glDeleteBuffers(1, intArrayOf(m.vbo), 0)
     }
 }
