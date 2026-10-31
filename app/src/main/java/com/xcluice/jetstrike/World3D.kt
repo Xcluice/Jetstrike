@@ -148,6 +148,12 @@ class World3D : GLSurfaceView.Renderer {
                     float rim = pow(1.0 - abs(n.z), 3.0) * 0.12;
                     if (uMode > 0.5) col *= texture2D(uTex, vT).rgb;
                     col = col * (amb + uSun * d + rim);
+                    if (uMode < 0.5) {
+                        vec3 hv = normalize(uL + vec3(0.0, 0.0, 1.0));
+                        col += uSun * pow(max(dot(n, hv), 0.0), 26.0) * 0.55;
+                    }
+                    float lum = dot(col, vec3(0.299, 0.587, 0.114));
+                    col = mix(vec3(lum), col, 1.22);
                     col = mix(col, vec3(1.0), uFlash);
                     a = uTint.a;
                 } else if (uMode < 2.5) {
@@ -333,7 +339,7 @@ class World3D : GLSurfaceView.Renderer {
     override fun onDrawFrame(gl: GL10?) {
         val s = snap
         val arena = s != null && s.mapId == 1
-        val fog = if (arena) 0xFF2A1013.toInt() else 0xFFD3E0E2.toInt()
+        val fog = if (arena) 0xFF2A1013.toInt() else 0xFFC4E0F7.toInt()
         GLES20.glClearColor(cr(fog), cg(fog), cb(fog), 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
         if (s == null || prog == 0) return
@@ -350,8 +356,8 @@ class World3D : GLSurfaceView.Renderer {
             GLES20.glUniform3f(uSky, .42f, .36f, .52f); GLES20.glUniform3f(uGnd, .26f, .14f, .17f)
             GLES20.glUniform3f(uSun, .55f, .32f, .34f)
         } else {
-            GLES20.glUniform3f(uSky, .66f, .72f, .80f); GLES20.glUniform3f(uGnd, .42f, .39f, .35f)
-            GLES20.glUniform3f(uSun, .62f, .56f, .46f)
+            GLES20.glUniform3f(uSky, .70f, .80f, .98f); GLES20.glUniform3f(uGnd, .52f, .44f, .34f)
+            GLES20.glUniform3f(uSun, .78f, .66f, .46f)
         }
         val ln = sqrt(.35f * .35f + .75f * .75f + .55f * .55f)
         GLES20.glUniform3f(uL, -.35f / ln, .75f / ln, .55f / ln)
@@ -404,7 +410,7 @@ class World3D : GLSurfaceView.Renderer {
 
         val tm = if (cam == null) terr else terr3
         if (tm != null) {
-            for (r in tm.ridges) draw(r, ident, 2, 1f, 1f, 1f, 1f)
+            for (r in tm.ridges) draw(r, ident, 0)
             draw(tm.back, ident, 1)
             draw(tm.solid, ident, 1)
             draw(tm.glass, ident, 0)
@@ -467,7 +473,7 @@ class World3D : GLSurfaceView.Renderer {
     private fun drawSky(arena: Boolean, shift: Float = 0f, tall: Boolean = false) {
         val top: Int; val mid: Int; val hor: Int
         if (arena) { top = 0xFF080506.toInt(); mid = 0xFF2A1018.toInt(); hor = 0xFF6A2A2E.toInt() }
-        else { top = 0xFF6F9BC2.toInt(); mid = 0xFFAEC7D4.toInt(); hor = 0xFFDFE9E8.toInt() }
+        else { top = 0xFF2A74DC.toInt(); mid = 0xFF6FBCF2.toInt(); hor = 0xFFFFD8A6.toInt() }
         if (skyMesh.count == 0 || skyArena != arena) {
             val b = MeshB()
             fun band(y0: Float, c0: Int, y1: Float, c1: Int) {
@@ -487,22 +493,24 @@ class World3D : GLSurfaceView.Renderer {
         draw(skyMesh, if (tall) sc(tr(ident, 0f, shift, 0f), 1f, 3f, 1f) else ident, 2)
         if (tall) return
         // sun
-        val sun = sc(tr(ident, .55f, .45f, 0f), .55f * (sh.toFloat() / sw.toFloat()) * 2.2f, 1.1f, 1f)
-        if (!arena) draw(quad, sun, 3, 1f, .96f, .82f, .75f) else draw(quad, sun, 3, 1f, .4f, .35f, .35f)
+        val sun = sc(tr(ident, .55f, .4f, 0f), .8f * (sh.toFloat() / sw.toFloat()) * 2.2f, 1.6f, 1f)
+        if (!arena) draw(quad, sun, 3, 1f, .88f, .6f, .85f) else draw(quad, sun, 3, 1f, .4f, .35f, .35f)
     }
 
     private var skyArena = false
 
     private fun drawClouds(s: Snap, arena: Boolean) {
-        val n = 9
+        val n = 16
         for (i in 0 until n) {
-            val z = -1100f - (i % 4) * 260f
-            val span = s.worldW + 3200f
-            var x = (((i * 977f + s.t * (6f + (i % 3) * 3f)) % span) + span) % span - 1400f
-            val y = -(s.worldH * .5f) + 380f + (i * 83 % 200) + (i % 3) * 120f
-            val w = 520f + (i * 61 % 5) * 90f
-            val m = sc(tr(ident, x, y, z), w, w * .28f, 1f)
-            if (arena) draw(quad, m, 3, .6f, .2f, .22f, .22f) else draw(quad, m, 3, 1f, 1f, 1f, .5f)
+            val z = -800f - (i % 5) * 260f
+            val span = s.worldW + 3600f
+            val x = (((i * 977f + s.t * (5f + (i % 3) * 3f)) % span) + span) % span - 1600f
+            val y = -(120f + ((i * 131) % 1300))
+            val w = 650f + (i * 61 % 6) * 140f
+            if (arena) { draw(quad, sc(tr(ident, x, y, z), w, w * .3f, 1f), 3, .6f, .2f, .22f, .22f); continue }
+            draw(quad, sc(tr(ident, x, y - w * .05f, z - 5f), w * 1.15f, w * .34f, 1f), 3, 1f, .8f, .65f, .35f)
+            draw(quad, sc(tr(ident, x, y, z), w, w * .3f, 1f), 3, 1f, 1f, 1f, .72f)
+            draw(quad, sc(tr(ident, x + w * .18f, y + w * .06f, z + 5f), w * .6f, w * .22f, 1f), 3, 1f, 1f, 1f, .6f)
         }
     }
 

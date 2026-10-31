@@ -131,7 +131,12 @@ object TerrainMesh {
         }
     }
 
-    private fun walls(b: MeshB, p: FloatArray, smooth: Boolean, z0: Float, z1: Float) {
+    private fun mixC(a: Int, c: Int, t: Float): Int {
+        fun ch(sh: Int) = (((a shr sh) and 255) * (1f - t) + ((c shr sh) and 255) * t).toInt()
+        return (0xFF shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
+    }
+
+    private fun walls(b: MeshB, p: FloatArray, smooth: Boolean, z0: Float, z1: Float, side: Int = 0, top: Int = 0) {
         val n = p.size / 2
         val ccw = area(p) > 0f
         val nx = FloatArray(n); val ny = FloatArray(n)
@@ -164,8 +169,15 @@ object TerrainMesh {
             val v0 = z0 * UVS; val v1 = z1 * UVS
             val ax = if (smooth) nx[i] else en[i * 2]; val ay = if (smooth) ny[i] else en[i * 2 + 1]
             val bx = if (smooth) nx[j] else en[i * 2]; val by = if (smooth) ny[j] else en[i * 2 + 1]
-            b.v(x0, y0, z0, ax, ay, 0f, u0, v0); b.v(x1, y1, z0, bx, by, 0f, u1, v0); b.v(x1, y1, z1, bx, by, 0f, u1, v1)
-            b.v(x0, y0, z0, ax, ay, 0f, u0, v0); b.v(x1, y1, z1, bx, by, 0f, u1, v1); b.v(x0, y0, z1, ax, ay, 0f, u0, v1)
+            if (top != 0) {
+                fun gc(ny0: Float) = mixC(side, top, ((ny0 - 0.3f) / 0.35f).coerceIn(0f, 1f))
+                val ca = gc(ay); val cb2 = gc(by)
+                b.color(ca); b.v(x0, y0, z0, ax, ay, 0f, u0, v0); b.color(cb2); b.v(x1, y1, z0, bx, by, 0f, u1, v0); b.v(x1, y1, z1, bx, by, 0f, u1, v1)
+                b.color(ca); b.v(x0, y0, z0, ax, ay, 0f, u0, v0); b.color(cb2); b.v(x1, y1, z1, bx, by, 0f, u1, v1); b.color(ca); b.v(x0, y0, z1, ax, ay, 0f, u0, v1)
+            } else {
+                b.v(x0, y0, z0, ax, ay, 0f, u0, v0); b.v(x1, y1, z0, bx, by, 0f, u1, v0); b.v(x1, y1, z1, bx, by, 0f, u1, v1)
+                b.v(x0, y0, z0, ax, ay, 0f, u0, v0); b.v(x1, y1, z1, bx, by, 0f, u1, v1); b.v(x0, y0, z1, ax, ay, 0f, u0, v1)
+            }
             run += len
         }
     }
@@ -179,11 +191,12 @@ object TerrainMesh {
     fun build3p(polys: List<TPoly>, worldW: Float, worldH: Float, arena: Boolean): Result {
         val solid = MeshB()
         val back = MeshB()
-        val rock = if (arena) 0xFF6A5A66.toInt() else 0xFF8C8272.toInt()
-        val conc = if (arena) 0xFF59606E.toInt() else 0xFF9AA2A8.toInt()
-        val wood = 0xFF93663C.toInt()
-        val caveC = if (arena) 0xFF2A1A30.toInt() else 0xFF4A4238.toInt()
-        val roomC = if (arena) 0xFF332238.toInt() else 0xFF6E7378.toInt()
+        val rock = if (arena) 0xFF6A5A66.toInt() else 0xFFD2A168.toInt()
+        val conc = if (arena) 0xFF59606E.toInt() else 0xFFC4CBD2.toInt()
+        val wood = 0xFFB9824A.toInt()
+        val caveC = if (arena) 0xFF2A1A30.toInt() else 0xFF6A4A34.toInt()
+        val roomC = if (arena) 0xFF332238.toInt() else 0xFF8A8E94.toInt()
+        val grassC = if (arena) 0 else 0xFF5FC13F.toInt()
         for (pl in polys) {
             val o = outline(pl)
             if (o.size < 6) continue
@@ -193,11 +206,11 @@ object TerrainMesh {
                     val c = when (pl.cls) { 1 -> rock; 2 -> conc; else -> wood }
                     solid.color(c); cap(solid, o, ZH, 1f)
                     solid.color(tint(c, 0.8f)); cap(solid, o, -ZH, -1f)
-                    solid.color(tint(c, 0.9f)); walls(solid, o, pl.smooth, -ZH, ZH)
+                    solid.color(tint(c, 0.9f)); walls(solid, o, pl.smooth, -ZH, ZH, tint(c, 0.9f), if (pl.cls == 1) grassC else 0)
                 }
             }
         }
-        val pc = if (arena) 0xFF3A2A44.toInt() else 0xFF6E6A60.toInt()
+        val pc = if (arena) 0xFF3A2A44.toInt() else 0xFF9A8A70.toInt()
         val top = 900f
         val bot = -(worldH + 300f)
         val cy = (top + bot) / 2f
@@ -218,11 +231,12 @@ object TerrainMesh {
         val glass = MeshB()
 
         // class colours (tex is multiplied on top)
-        val rock = if (arena) 0xFF6A5A66.toInt() else 0xFF8C8272.toInt()
-        val conc = if (arena) 0xFF59606E.toInt() else 0xFF9AA2A8.toInt()
-        val wood = 0xFF93663C.toInt()
-        val caveC = if (arena) 0xFF2A1A30.toInt() else 0xFF4A4238.toInt()
-        val roomC = if (arena) 0xFF332238.toInt() else 0xFF6E7378.toInt()
+        val rock = if (arena) 0xFF6A5A66.toInt() else 0xFFD2A168.toInt()
+        val conc = if (arena) 0xFF59606E.toInt() else 0xFFC4CBD2.toInt()
+        val wood = 0xFFB9824A.toInt()
+        val caveC = if (arena) 0xFF2A1A30.toInt() else 0xFF6A4A34.toInt()
+        val roomC = if (arena) 0xFF332238.toInt() else 0xFF8A8E94.toInt()
+        val grassC = if (arena) 0 else 0xFF5FC13F.toInt()
 
         for (pl in polys) {
             val o = outline(pl)
@@ -237,7 +251,7 @@ object TerrainMesh {
                     solid.color(c)
                     cap(solid, o, Z_FRONT, 1f)
                     solid.color(tint(c, 0.78f))
-                    walls(solid, o, pl.smooth, Z_FRONT, Z_BACK)
+                    walls(solid, o, pl.smooth, Z_FRONT, Z_BACK, tint(c, 0.78f), if (pl.cls == 1) grassC else 0)
                     // lighter lip on the front edge so silhouettes read like the 2D outline
                     solid.color(tint(c, 0.55f))
                     walls(solid, o, pl.smooth, Z_FRONT + 0.01f, Z_FRONT - 4f)
@@ -259,32 +273,27 @@ object TerrainMesh {
             glass.push(); glass.translate((x0 + x1) / 2f, (y0 + y1) / 2f, z + 3.4f); glass.box(2f, w[3], 1f); glass.pop()
         }
 
-        // far mountain ridges, blue-grey (fogged by the shader)
+        // distant floating islands with grassy tops (arena keeps dark crags)
         val ridges = ArrayList<Mesh3>()
-        val defs = if (arena)
-            arrayOf(floatArrayOf(-700f, 330f, 0.004f, 0f, 0xFF3A2A48.toInt().toFloat()), floatArrayOf(-1250f, 520f, 0.0028f, 5f, 0xFF2E2038.toInt().toFloat()))
-        else
-            arrayOf(floatArrayOf(-650f, 300f, 0.0042f, 0f, 0xFF7A8E9E.toInt().toFloat()), floatArrayOf(-1150f, 480f, 0.003f, 5f, 0xFF8FA3B2.toInt().toFloat()), floatArrayOf(-1750f, 650f, 0.0021f, 11f, 0xFFA6B8C4.toInt().toFloat()))
-        for (d in defs) {
-            val rb = MeshB()
-            val z = d[0]; val hgt = d[1]; val fr = d[2]; val s = d[3].toInt()
-            rb.color(d[4].toInt())
-            val spread = abs(z) * 0.9f
-            val x0 = -spread - 200f; val x1 = worldW + spread + 200f
-            val base = -(worldH + 900f)
-            val horizon = -(worldH * 0.5f) - 120f
-            var x = x0
-            val step = 60f
-            while (x < x1) {
-                val xn = x + step
-                fun top(px: Float) = horizon + (noise1(px * fr, s) * 0.7f + noise1(px * fr * 3.1f, s + 7) * 0.3f) * hgt * 1.4f
-                val ya = top(x); val yb = top(xn)
-                rb.v(x, base, z, 0f, 0f, 1f); rb.v(xn, base, z, 0f, 0f, 1f); rb.v(xn, yb, z, 0f, 0f, 1f)
-                rb.v(x, base, z, 0f, 0f, 1f); rb.v(xn, yb, z, 0f, 0f, 1f); rb.v(x, ya, z, 0f, 0f, 1f)
-                x = xn
+        val ib = MeshB()
+        val n = if (arena) 8 else 15
+        for (i in 0 until n) {
+            val hx = hash(i * 3 + 1); val hy = hash(i * 3 + 2); val hz = hash(i * 3 + 3)
+            val x = -600f + hx * (worldW + 1400f)
+            val y = -(180f + hy * (worldH - 150f))
+            val z = -(520f + hz * 1000f)
+            val r = 80f + hash(i * 7 + 5) * 170f
+            ib.push(); ib.translate(x, y, z); ib.scale(1f, 0.85f + hash(i + 40) * .4f, 0.7f)
+            ib.color(if (arena) 0xFF3A2A48.toInt() else tint(0xFFC08E5A.toInt(), .85f + hash(i + 9) * .3f))
+            ib.push(); ib.translate(0f, -r * .55f, 0f); ib.cylY(r * .1f, r, r * 1.1f, 14, true); ib.pop()
+            ib.color(if (arena) 0xFF4A3358.toInt() else 0xFF68C646.toInt())
+            ib.push(); ib.translate(0f, r * .03f, 0f); ib.cylY(r * 1.03f, r * 1.03f, r * .16f, 14, true); ib.pop()
+            if (!arena) {
+                ib.color(0xFF3E9A3A.toInt()); ib.push(); ib.translate(r * .3f, r * .2f, 0f); ib.sphere(r * .22f, 8, 6); ib.pop()
             }
-            ridges.add(rb.build())
+            ib.pop()
         }
+        ridges.add(ib.build())
         return Result(solid.build(), back.build(), glass.build(), ridges)
     }
 }
