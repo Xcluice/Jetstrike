@@ -317,10 +317,9 @@ class Game {
     var lx = 0f
     var ly = 0f
     var lOn = false
-    /** Behind-shoulder / first-person views: stick up and down walk forward and back relative to the camera. */
+    /** Behind-shoulder / first-person views: walking is relative to the camera and never turns you around. */
     var viewRel = false
     var camFace = 1f
-    var jetHold = false
     var rx = 0f
     var ry = 0f
     var rOn = false
@@ -894,16 +893,10 @@ class Game {
         var fire = false
         val dz = .18f
         if (lOn) {
-            if (viewRel) {
-                val f = -ly
-                val v = if (abs(f) > dz) f else if (abs(lx) > dz) lx else 0f
-                if (v != 0f) mx = sign(v) * min(1f, (abs(v) - dz) / (1f - dz) * 1.35f) * camFace
-            } else {
-                if (abs(lx) > dz) mx = sign(lx) * min(1f, (abs(lx) - dz) / (1f - dz) * 1.35f)
-                jet = ly < -.45f
-            }
+            // stick up flies, as always; in the 3D views left/right means back/ahead of the camera
+            if (abs(lx) > dz) mx = sign(lx) * min(1f, (abs(lx) - dz) / (1f - dz) * 1.35f) * (if (viewRel) camFace else 1f)
+            jet = ly < -.45f
         }
-        if (viewRel && jetHold) jet = true
         val rm = hypot(rx, ry)
         if (rOn && rm > .12f) {
             p.aim = atan2(ry, rx)

@@ -142,8 +142,6 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private val pauseR = RectF()
     private val muteR = RectF()
     private val viewR = RectF()
-    private val flyR = RectF()
-    private var flyId = -1
     /** 0 side view, 1 behind the shoulder, 2 first person */
     private var viewMode = 0
     private var camYaw = 0f
@@ -1168,7 +1166,6 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         viewR.set(W - mr - bs * 3f - dp(16f), top, W - mr - bs * 2f - dp(16f), top + bs)
         val m = ctl.getValue("move")
         lcx = m.fx * W; lcy = m.fy * H; lR = dp(56f) * m.s
-        flyR.set(lcx - dp(34f), lcy - lR - dp(78f), lcx + dp(34f), lcy - lR - dp(14f))
         val a = ctl.getValue("aim")
         rcx = a.fx * W; rcy = a.fy * H; rR = dp(56f) * a.s
         val g = ctl.getValue("gren")
@@ -1498,10 +1495,6 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         // tools
         glass(c, pauseR.left, pauseR.top, pauseR.right, pauseR.bottom, dp(14f), dp(1f))
         glass(c, muteR.left, muteR.top, muteR.right, muteR.bottom, dp(14f), dp(1f))
-        if (world != null && viewMode != 0) {
-            glass(c, flyR.left, flyR.top, flyR.right, flyR.bottom, dp(18f), dp(1f))
-            text(c, "FLY", flyR.centerX(), flyR.centerY() + dp(5f), dp(14f), if (game.jetHold) AMBER else WHITE, Paint.Align.CENTER, body)
-        }
         if (world != null) {
             glass(c, viewR.left, viewR.top, viewR.right, viewR.bottom, dp(14f), dp(1f))
             text(c, when (viewMode) { 1 -> "3P"; 2 -> "1P"; else -> "SIDE" }, viewR.centerX(), viewR.centerY() + dp(4.5f), dp(12f), WHITE, Paint.Align.CENTER, body)
@@ -2113,7 +2106,7 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
         }
         val cam = if (in3d && viewMode != 0) computeCam() else null
         game.viewRel = cam != null
-        if (cam == null) { game.jetHold = false; flyId = -1 } else game.camFace = if (cos(game.player.aim) >= 0f) 1f else -1f
+        if (cam != null) game.camFace = if (cos(game.player.aim) >= 0f) 1f else -1f
         c.save()
         val sh = game.shake
         val ox = if (sh > .1f) rnd(-sh, sh) else 0f
@@ -2263,7 +2256,6 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
             if (pauseR.contains(x, y)) { btnPtr = id; btnKind = "pause"; return }
             if (muteR.contains(x, y)) { btnPtr = id; btnKind = "mute"; return }
             if (world != null && viewR.contains(x, y)) { btnPtr = id; btnKind = "view"; return }
-            if (world != null && viewMode != 0 && flyId == -1 && flyR.contains(x, y)) { flyId = id; g.jetHold = true; return }
             if (grenR.contains(x, y)) { btnPtr = id; btnKind = "gren"; return }
             if (reloadR.contains(x, y)) { btnPtr = id; btnKind = "reload"; return }
             if (scopeR.contains(x, y)) { btnPtr = id; btnKind = "scope"; return }
@@ -2307,7 +2299,6 @@ class GameView(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback, Runnabl
     private fun onUp(id: Int, x: Float, y: Float) {
         val g = game
         if (editing) { if (id == editPtr) { editPtr = -1; dragging = false; sliderDrag = false }; return }
-        if (id == flyId) { flyId = -1; g.jetHold = false; return }
         if (id == lId) {
             lId = -1; lkx = 0f; lky = 0f; g.lOn = false; g.lx = 0f; g.ly = 0f
         } else if (id == rId) {
